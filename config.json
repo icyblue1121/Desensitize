@@ -1,0 +1,7 @@
+{
+  "api_url": "http://10.236.24.86:1234",
+  "model": "qwen3.5-9b-claude-4.6-opus-reasoning-distilled",
+  "model_2": "nvidia/nemotron-3-nano-4b",
+  "dual_model": true,
+  "cleanup_days": 7
+}

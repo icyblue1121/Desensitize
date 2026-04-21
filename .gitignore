@@ -1,0 +1,21 @@
+.DS_Store
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Local environment/config secrets
+.env
+.env.*
+
+# Runtime and test artifacts
+*.log
+.pytest_cache/
+
+# User requested data directory
+data/

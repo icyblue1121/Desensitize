@@ -1,0 +1,1703 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>合同文档脱敏系统</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --blue:    #2563eb;
+    --blue-dk: #1d4ed8;
+    --blue-lt: #eff6ff;
+    --gray:    #64748b;
+    --gray-lt: #f8fafc;
+    --border:  #e2e8f0;
+    --success: #16a34a;
+    --error:   #dc2626;
+    --warn:    #d97706;
+    --text:    #1e293b;
+    --radius:  10px;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--gray-lt);
+    color: var(--text);
+    min-height: 100vh;
+  }
+
+  /* ── 登录遮罩 ── */
+  #login-overlay {
+    position: fixed; inset: 0;
+    background: rgba(15, 23, 42, 0.75);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 1000;
+    backdrop-filter: blur(4px);
+  }
+  #login-overlay.hidden { display: none; }
+
+  .login-card {
+    background: white;
+    border-radius: 16px;
+    padding: 40px 36px;
+    width: 360px;
+    box-shadow: 0 20px 60px rgba(0,0,0,.25);
+    text-align: center;
+  }
+  .login-logo { font-size: 48px; margin-bottom: 12px; }
+  .login-title { font-size: 20px; font-weight: 700; margin-bottom: 6px; }
+  .login-sub { font-size: 13px; color: var(--gray); margin-bottom: 28px; line-height: 1.6; }
+  .login-input {
+    width: 100%; border: 1.5px solid var(--border);
+    border-radius: 8px; padding: 12px 14px;
+    font-size: 15px; color: var(--text);
+    outline: none; transition: border-color .2s;
+    margin-bottom: 14px;
+  }
+  .login-input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(37,99,235,.1); }
+  .login-btn {
+    width: 100%; padding: 12px;
+    background: var(--blue); color: white;
+    border: none; border-radius: 8px;
+    font-size: 15px; font-weight: 600;
+    cursor: pointer; transition: background .2s;
+  }
+  .login-btn:hover { background: var(--blue-dk); }
+  .login-error { color: var(--error); font-size: 13px; margin-top: 8px; min-height: 18px; }
+
+  /* ── 顶栏 ── */
+  header {
+    background: #1e3a8a;
+    color: white;
+    padding: 0 24px;
+    height: 56px;
+    display: flex; align-items: center; gap: 10px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.2);
+  }
+  header .logo {
+    width: 30px; height: 30px;
+    background: #3b82f6; border-radius: 7px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; flex-shrink: 0;
+  }
+  header h1 { font-size: 17px; font-weight: 600; flex: 1; }
+  .user-chip {
+    display: flex; align-items: center; gap: 8px;
+    background: rgba(255,255,255,.15);
+    border-radius: 20px; padding: 5px 12px;
+    font-size: 13px;
+  }
+  .user-chip .switch-btn {
+    background: none; border: none; color: #93c5fd;
+    cursor: pointer; font-size: 12px; padding: 0;
+  }
+  .user-chip .switch-btn:hover { color: white; }
+
+  /* ── 导航 Tab ── */
+  nav {
+    background: white;
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+    display: flex;
+  }
+  .tab-btn {
+    padding: 13px 22px; border: none; background: transparent;
+    cursor: pointer; font-size: 14px; color: var(--gray);
+    border-bottom: 3px solid transparent; transition: all .2s;
+    font-weight: 500;
+  }
+  .tab-btn:hover { color: var(--blue); }
+  .tab-btn.active { color: var(--blue); border-bottom-color: var(--blue); }
+
+  /* ── 主内容 ── */
+  main { max-width: 780px; margin: 28px auto; padding: 0 16px; }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* ── 卡片 ── */
+  .card {
+    background: white; border-radius: var(--radius);
+    border: 1px solid var(--border); padding: 24px 26px;
+    margin-bottom: 18px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.05);
+  }
+  .card-title {
+    font-size: 15px; font-weight: 600; margin-bottom: 16px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .card-title .icon { font-size: 17px; }
+
+  /* ── 拖放区域 ── */
+  .drop-zone {
+    border: 2px dashed var(--border);
+    border-radius: var(--radius); padding: 36px 20px;
+    text-align: center; cursor: pointer; transition: all .2s;
+    background: var(--gray-lt);
+  }
+  .drop-zone:hover, .drop-zone.drag-over { border-color: var(--blue); background: var(--blue-lt); }
+  .drop-zone .dz-icon { font-size: 38px; margin-bottom: 10px; }
+  .drop-zone .dz-label { font-size: 14px; font-weight: 500; margin-bottom: 5px; }
+  .drop-zone .dz-hint { font-size: 12px; color: var(--gray); }
+  .drop-zone input[type=file] { display: none; }
+  .file-selected { background: var(--blue-lt); border-color: var(--blue); padding: 14px; }
+  .file-selected .dz-label { color: var(--blue); }
+
+  label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 5px; }
+  textarea {
+    width: 100%; border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 13px; font-size: 14px; font-family: inherit;
+    resize: vertical; outline: none; transition: border-color .2s;
+  }
+  textarea:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(37,99,235,.1); }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 10px 20px; border: none; border-radius: 8px;
+    font-size: 14px; font-weight: 600; cursor: pointer; transition: all .2s;
+    text-decoration: none;
+  }
+  .btn-primary { background: var(--blue); color: white; }
+  .btn-primary:hover { background: var(--blue-dk); }
+  .btn-primary:disabled { background: #93c5fd; cursor: not-allowed; }
+  .btn-secondary { background: white; color: var(--gray); border: 1px solid var(--border); }
+  .btn-secondary:hover { background: var(--gray-lt); }
+  .btn-success { background: #dcfce7; color: var(--success); border: 1px solid #86efac; }
+  .btn-success:hover { background: #bbf7d0; }
+  .btn-danger { background: #fee2e2; color: var(--error); border: 1px solid #fca5a5; font-size: 13px; padding: 5px 11px; }
+  .btn-danger:hover { background: #fecaca; }
+  .btn-sm { padding: 6px 13px; font-size: 12px; }
+  .btn-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+
+  /* ── 进度盒（旧，仅用于上传中提示）── */
+  .progress-box {
+    border: 1px solid #bfdbfe; background: var(--blue-lt);
+    border-radius: var(--radius); padding: 20px; text-align: center; margin-top: 18px;
+  }
+  .spinner {
+    display: inline-block; width: 26px; height: 26px;
+    border: 3px solid #bfdbfe; border-top-color: var(--blue);
+    border-radius: 50%; animation: spin .8s linear infinite; margin-bottom: 8px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .progress-text { font-size: 14px; color: #1d4ed8; font-weight: 500; }
+
+  /* ── 任务队列卡片 ── */
+  .queue-card {
+    background: white; border-radius: var(--radius);
+    border: 1px solid var(--border);
+    margin-bottom: 18px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.05);
+    overflow: hidden;
+  }
+  .queue-card-header {
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+    background: var(--gray-lt);
+  }
+  .queue-card-title {
+    font-size: 14px; font-weight: 600;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .queue-count-pill {
+    background: var(--blue); color: white;
+    border-radius: 99px; padding: 1px 8px;
+    font-size: 11px; font-weight: 700;
+    min-width: 20px; text-align: center;
+  }
+  .queue-count-pill.done { background: var(--success); }
+
+  /* ── 队列任务条目 ── */
+  .queue-item {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    transition: background .15s;
+  }
+  .queue-item:last-child { border-bottom: none; }
+  .queue-item:hover { background: #fafafa; }
+
+  .qi-header {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 12px; margin-bottom: 10px;
+  }
+  .qi-filename {
+    font-size: 14px; font-weight: 600; word-break: break-all; flex: 1; line-height: 1.4;
+  }
+  .qi-filename .arrow { color: var(--gray); font-weight: 400; margin: 0 6px; }
+  .qi-filename .new-name { color: var(--success); }
+
+  /* 状态徽章 */
+  .status-badge {
+    flex-shrink: 0;
+    display: inline-flex; align-items: center; gap: 4px;
+    border-radius: 99px; padding: 3px 10px;
+    font-size: 11px; font-weight: 700; white-space: nowrap;
+  }
+  .badge-queued     { background: #fef9c3; color: #a16207; }
+  .badge-processing { background: #dbeafe; color: #1d4ed8; }
+  .badge-completed  { background: #dcfce7; color: var(--success); }
+  .badge-error      { background: #fee2e2; color: var(--error); }
+  .badge-cancelled  { background: #f1f5f9; color: #64748b; }
+
+  /* 队列项右侧操作按钮组 */
+  .qi-ctrl {
+    display: flex; align-items: center; gap: 4px; flex-shrink: 0;
+  }
+  .qi-ctrl-btn {
+    border: none; background: transparent; cursor: pointer;
+    padding: 2px 5px; border-radius: 5px;
+    font-size: 13px; line-height: 1.4;
+    color: var(--gray); transition: background .15s, color .15s;
+  }
+  .qi-ctrl-btn:hover { background: var(--border); color: var(--text); }
+  .qi-ctrl-btn.cancel:hover { background: #fee2e2; color: var(--error); }
+  .qi-ctrl-btn:disabled { opacity: .35; cursor: default; pointer-events: none; }
+
+  /* 进度条 */
+  .prog-track {
+    height: 6px; background: var(--border);
+    border-radius: 99px; overflow: hidden; margin: 4px 0 6px;
+  }
+  .prog-fill {
+    height: 100%; border-radius: 99px;
+    background: var(--blue);
+    transition: width .6s cubic-bezier(.4,0,.2,1);
+  }
+  .prog-fill.fill-done  { background: var(--success); }
+  .prog-fill.fill-error { background: var(--error); }
+
+  .prog-meta {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 12px; color: var(--gray); margin-bottom: 4px;
+  }
+  .prog-meta .step-text { flex: 1; }
+  .prog-meta .time-text { font-weight: 500; color: var(--blue); white-space: nowrap; }
+
+  .qi-actions { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .qi-meta { font-size: 11px; color: var(--gray); margin-top: 6px; }
+
+  /* ── 错误 ── */
+  .error-box {
+    border: 1px solid #fca5a5; background: #fff1f2; border-radius: var(--radius);
+    padding: 14px; margin-top: 14px; font-size: 14px; color: var(--error);
+  }
+  .error-box strong { display: block; margin-bottom: 3px; }
+
+  /* ── 历史 ── */
+  .history-empty { text-align: center; padding: 44px; color: var(--gray); font-size: 14px; }
+  .history-item {
+    border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 14px 18px; margin-bottom: 10px; background: white;
+    display: flex; flex-direction: column; gap: 7px;
+  }
+  .history-item-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+  .history-filename { font-weight: 600; font-size: 14px; word-break: break-all; }
+  .history-meta { font-size: 12px; color: var(--gray); }
+  .history-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+  /* ── 两列上传 ── */
+  .upload-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 560px) { .upload-row { grid-template-columns: 1fr; } }
+
+  /* ── 使用说明 ── */
+  .guide-section { margin-bottom: 14px; }
+  .guide-section h3 { font-size: 14px; font-weight: 600; margin-bottom: 8px; color: var(--text); }
+  .guide-section p, .guide-section li {
+    font-size: 13px; color: var(--gray); line-height: 1.8;
+  }
+  .guide-section ul { padding-left: 18px; }
+  .notice-box {
+    background: #fffbeb; border: 1px solid #fcd34d;
+    border-radius: 8px; padding: 12px 14px; font-size: 13px;
+    color: #92400e; line-height: 1.8;
+  }
+
+  /* ── 状态指示 ── */
+  .status-ok   { color: var(--success); font-weight: 500; }
+  .status-fail { color: var(--error);   font-weight: 500; }
+
+  /* ── Mini spinner for badge ── */
+  .mini-spin {
+    display: inline-block; width: 10px; height: 10px;
+    border: 2px solid #93c5fd; border-top-color: var(--blue);
+    border-radius: 50%; animation: spin .7s linear infinite;
+    vertical-align: middle;
+  }
+  .divider { height: 1px; background: var(--border); margin: 14px 0; }
+  .category-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+  .tag { background: white; border: 1px solid var(--border); border-radius: 20px; padding: 3px 10px; font-size: 12px; }
+
+  /* ── 纠错弹窗 ── */
+  .fb-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45);
+    z-index: 1000; align-items: center; justify-content: center;
+  }
+  .fb-overlay.open { display: flex; }
+  .fb-modal {
+    background: #ffffff; border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,.18);
+    width: min(640px, 96vw); max-height: 90vh; display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .fb-modal-header {
+    padding: 18px 20px 14px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
+  }
+  .fb-modal-header h3 { margin: 0; font-size: 16px; }
+  .fb-modal-body { padding: 16px 20px; overflow-y: auto; flex: 1; }
+  .fb-modal-footer {
+    padding: 12px 20px; border-top: 1px solid var(--border);
+    display: flex; justify-content: flex-end; gap: 8px; flex-shrink: 0;
+  }
+  .fb-section-title {
+    font-size: 13px; font-weight: 600; color: var(--text); margin: 12px 0 8px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .fb-section-title:first-child { margin-top: 0; }
+  .fb-row {
+    display: grid; grid-template-columns: 120px 1fr 28px;
+    gap: 6px; align-items: center; margin-bottom: 6px;
+  }
+  .fb-fp-row {
+    display: grid; grid-template-columns: 1fr 28px;
+    gap: 6px; align-items: center; margin-bottom: 6px;
+  }
+  .fb-row select, .fb-row input, .fb-fp-row input {
+    height: 32px; border: 1px solid var(--border); border-radius: 6px;
+    padding: 0 8px; font-size: 13px; background: white; color: var(--text);
+    width: 100%; box-sizing: border-box;
+  }
+  .fb-row select:focus, .fb-row input:focus, .fb-fp-row input:focus {
+    outline: none; border-color: var(--blue);
+  }
+  .fb-del-btn {
+    width: 28px; height: 28px; border: none; border-radius: 6px;
+    background: #fee2e2; color: #dc2626; cursor: pointer; font-size: 14px;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .fb-del-btn:hover { background: #fecaca; }
+  .fb-add-btn {
+    font-size: 12px; color: var(--blue); background: none; border: 1px dashed var(--blue);
+    border-radius: 6px; padding: 4px 10px; cursor: pointer; margin-top: 4px;
+  }
+  .fb-add-btn:hover { background: #eff6ff; }
+  .fb-divider { height: 1px; background: var(--border); margin: 14px 0; }
+  .fb-success-msg { text-align: center; padding: 20px 0; }
+  .fb-success-msg .fb-ok-icon { font-size: 36px; margin-bottom: 8px; }
+  .fb-success-msg p { margin: 6px 0; color: var(--gray); font-size: 14px; }
+  .fb-col-hint {
+    display: grid; grid-template-columns: 120px 1fr 28px;
+    gap: 6px; font-size: 11px; color: var(--gray); margin-bottom: 4px;
+  }
+  .fb-col-hint-fp {
+    display: grid; grid-template-columns: 1fr 28px;
+    gap: 6px; font-size: 11px; color: var(--gray); margin-bottom: 4px;
+  }
+</style>
+</head>
+<body>
+
+<!-- ══ 登录遮罩 ═════════════════════════════════════════════════════════════ -->
+<div id="login-overlay">
+  <div class="login-card">
+    <div class="login-logo">🔒</div>
+    <div class="login-title">合同文档脱敏系统</div>
+    <div class="login-sub">请输入您的姓名或工号以继续<br>（不同账号历史记录独立保存）</div>
+    <input class="login-input" id="login-username" type="text"
+           placeholder="例如：张三 或 HR001" maxlength="30"
+           onkeydown="if(event.key==='Enter')doLogin()">
+    <button class="login-btn" onclick="doLogin()">进入系统</button>
+    <div class="login-error" id="login-error"></div>
+  </div>
+</div>
+
+<!-- ══ 顶栏 ═════════════════════════════════════════════════════════════════ -->
+<header>
+  <div class="logo">🔒</div>
+  <h1>合同文档脱敏系统</h1>
+  <div class="user-chip">
+    <span id="header-username">—</span>
+    <button class="switch-btn" onclick="switchUser()" title="切换用户">切换</button>
+  </div>
+</header>
+
+<!-- ══ 导航 Tab ══════════════════════════════════════════════════════════════ -->
+<nav>
+  <button class="tab-btn active" onclick="switchTab('tab-desensitize', this)">📄 文档脱敏</button>
+  <button class="tab-btn" onclick="switchTab('tab-restore', this)">🔄 脱敏还原</button>
+  <button class="tab-btn" data-tab="tab-history" onclick="switchTab('tab-history', this); loadHistory()">🕒 历史记录</button>
+  <button class="tab-btn" onclick="switchTab('tab-settings', this); loadSystemStatus()">📋 使用说明</button>
+</nav>
+
+<main>
+
+<!-- ══ 脱敏 Tab ══════════════════════════════════════════════════════════════ -->
+<div id="tab-desensitize" class="tab-panel active">
+
+  <!-- 上传卡片 -->
+  <div class="card">
+    <div class="card-title"><span class="icon">📤</span>上传需要脱敏的合同文件</div>
+    <div class="drop-zone" id="dz-main"
+         onclick="document.getElementById('file-main').click()"
+         ondragover="dzDragOver(event,'dz-main')"
+         ondragleave="dzDragLeave('dz-main')"
+         ondrop="dzDrop(event,'dz-main','file-main',onMainFileSelect)">
+      <div class="dz-icon">📁</div>
+      <div class="dz-label">拖放文件到此处，或点击选择</div>
+      <div class="dz-hint">支持格式：.docx &nbsp;·&nbsp; .xlsx / .xls &nbsp;·&nbsp; .csv &nbsp;·&nbsp; .pdf（可选中文字）</div>
+      <input type="file" id="file-main" accept=".docx,.xlsx,.xls,.csv,.pdf"
+             onchange="onMainFileSelect(this.files[0])">
+    </div>
+    <div style="margin-top:18px;">
+      <label for="custom-instructions">自定义脱敏指令（可选）</label>
+      <textarea id="custom-instructions" rows="3"
+        placeholder="除非有特别需求，一般情况无需填写，将自动套用默认规则。示例：将所有金额统一替换为100万元；额外隐藏日期信息。"></textarea>
+      <div style="font-size:12px;color:var(--gray);margin-top:4px;">支持自然语言，优先级高于默认规则</div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-primary" id="btn-desensitize" onclick="startDesensitize()" disabled>
+        🚀 开始脱敏
+      </button>
+      <button class="btn btn-secondary" onclick="resetDesensitizeUpload()">重置</button>
+    </div>
+    <div id="desensitize-error"></div>
+  </div>
+
+  <!-- 队列面板（有任务时显示）-->
+  <div id="dequeue-panel" class="queue-card" style="display:none">
+    <div class="queue-card-header">
+      <div class="queue-card-title">
+        📋 处理队列
+        <span id="dequeue-count-pill" class="queue-count-pill">0</span>
+      </div>
+      <button class="btn btn-secondary btn-sm" onclick="clearDoneJobs('desensitize')">清除已完成</button>
+    </div>
+    <div id="dequeue-list"></div>
+  </div>
+
+</div>
+
+<!-- ══ 还原 Tab ══════════════════════════════════════════════════════════════ -->
+<div id="tab-restore" class="tab-panel">
+
+  <div class="card">
+    <div class="card-title"><span class="icon">🔄</span>文档还原</div>
+    <div style="font-size:13px;color:var(--gray);margin-bottom:16px;">
+      上传 AI 审阅后的脱敏文档，以及脱敏时生成的映射表，系统自动还原为原始内容。
+    </div>
+    <div class="upload-row">
+      <div>
+        <label>脱敏文档</label>
+        <div class="drop-zone" id="dz-restore-doc" style="padding:22px 12px"
+             onclick="document.getElementById('file-restore-doc').click()"
+             ondragover="dzDragOver(event,'dz-restore-doc')"
+             ondragleave="dzDragLeave('dz-restore-doc')"
+             ondrop="dzDrop(event,'dz-restore-doc','file-restore-doc',onRestoreDocSelect)">
+          <div class="dz-icon">📄</div>
+          <div class="dz-label" style="font-size:13px">点击或拖放文档</div>
+          <input type="file" id="file-restore-doc" accept=".docx,.xlsx,.xls,.csv,.pdf"
+                 onchange="onRestoreDocSelect(this.files[0])">
+        </div>
+      </div>
+      <div>
+        <label>映射表（.xlsx）</label>
+        <div class="drop-zone" id="dz-restore-map" style="padding:22px 12px"
+             onclick="document.getElementById('file-restore-map').click()"
+             ondragover="dzDragOver(event,'dz-restore-map')"
+             ondragleave="dzDragLeave('dz-restore-map')"
+             ondrop="dzDrop(event,'dz-restore-map','file-restore-map',onRestoreMapSelect)">
+          <div class="dz-icon">📊</div>
+          <div class="dz-label" style="font-size:13px">点击或拖放映射表</div>
+          <input type="file" id="file-restore-map" accept=".xlsx"
+                 onchange="onRestoreMapSelect(this.files[0])">
+        </div>
+      </div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-primary" id="btn-restore" onclick="startRestore()" disabled>🔄 开始还原</button>
+      <button class="btn btn-secondary" onclick="resetRestoreUpload()">重置</button>
+    </div>
+    <div id="restore-error"></div>
+  </div>
+
+  <!-- 还原队列面板 -->
+  <div id="requeue-panel" class="queue-card" style="display:none">
+    <div class="queue-card-header">
+      <div class="queue-card-title">
+        📋 还原队列
+        <span id="requeue-count-pill" class="queue-count-pill">0</span>
+      </div>
+      <button class="btn btn-secondary btn-sm" onclick="clearDoneJobs('restore')">清除已完成</button>
+    </div>
+    <div id="requeue-list"></div>
+  </div>
+
+</div>
+
+<!-- ══ 历史 Tab ══════════════════════════════════════════════════════════════ -->
+<div id="tab-history" class="tab-panel">
+
+  <!-- 历史还原进度队列（有任务时显示） -->
+  <div id="hrqueue-panel" class="queue-card" style="display:none;margin-bottom:18px">
+    <div class="queue-card-header">
+      <div class="queue-card-title">
+        🔄 还原队列
+        <span id="hrqueue-count-pill" class="queue-count-pill">0</span>
+      </div>
+      <button class="btn btn-secondary btn-sm" onclick="clearDoneJobs('hist-restore')">清除已完成</button>
+    </div>
+    <div id="hrqueue-list"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span class="icon">🕒</span>我的历史记录</div>
+    <div id="history-list"><div class="history-empty">加载中...</div></div>
+  </div>
+</div>
+
+<!-- ══ 使用说明 Tab ═══════════════════════════════════════════════════════════ -->
+<div id="tab-settings" class="tab-panel">
+
+  <div class="card">
+    <div class="card-title"><span class="icon">🔒</span>系统状态</div>
+    <div id="system-status" style="font-size:14px;color:var(--gray)">检查中...</div>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span class="icon">📋</span>使用说明</div>
+
+    <div class="guide-section">
+      <h3>📄 脱敏流程</h3>
+      <ul>
+        <li>上传合同文档（.docx / .xlsx / .csv / .pdf）</li>
+        <li>可选：在文本框中输入自定义脱敏指令</li>
+        <li>点击"开始脱敏"，文件进入处理队列</li>
+        <li>队列中可继续添加新文件，多个文件依次处理</li>
+        <li>处理完成后下载脱敏文档和映射表</li>
+      </ul>
+    </div>
+
+    <div class="guide-section">
+      <h3>🔄 还原流程</h3>
+      <ul>
+        <li>AI 审阅完成后，上传 AI 返回的脱敏文档</li>
+        <li>同时上传脱敏时下载的映射表（.xlsx）</li>
+        <li>点击"开始还原"，下载还原后的文档</li>
+      </ul>
+    </div>
+
+    <div class="guide-section">
+      <h3>⏳ 排队说明</h3>
+      <ul>
+        <li>系统使用本地 AI 模型处理，同一时间只能处理一个任务</li>
+        <li>多人同时提交时，任务会自动排队，队列中实时显示排队位置</li>
+        <li>等待期间可继续上传文件，加入队列排队</li>
+        <li>大型文档（20页合同）处理时间约 2–8 分钟，请耐心等待</li>
+      </ul>
+    </div>
+
+    <div class="guide-section">
+      <h3>📁 格式说明</h3>
+      <ul>
+        <li>.docx（Word）、.xlsx / .xls（Excel）、.csv — 保留原始格式输出</li>
+        <li>.pdf（可选中文字）— 转换为 .docx 输出，原排版可能简化</li>
+        <li>不支持扫描件（图片型 PDF）</li>
+      </ul>
+    </div>
+
+    <div class="notice-box">
+      ⚠️ <b>文件保留期限：7 天</b><br>
+      脱敏文档和映射表在服务器上保存 <b>7 天</b>后自动删除。请在处理完成后及时下载保存，
+      超过期限后历史记录中的下载链接将失效。
+    </div>
+
+  </div>
+</div>
+
+</main>
+
+<!-- ══ 纠错弹窗 ═════════════════════════════════════════════════════════════ -->
+<div class="fb-overlay" id="fb-overlay">
+  <div class="fb-modal">
+    <div class="fb-modal-header">
+      <h3>✏️ 提交纠错反馈</h3>
+      <button class="qi-ctrl-btn cancel" onclick="closeFeedbackModal()" style="width:28px;height:28px;font-size:16px">✕</button>
+    </div>
+    <!-- 表单视图 -->
+    <div class="fb-modal-body" id="fb-form-body">
+      <div class="fb-section-title">🔍 漏识别 <span style="font-weight:400;color:var(--gray);font-size:12px">（系统未检测到、应当被脱敏的内容）</span></div>
+      <div class="fb-col-hint"><span>替换类型</span><span>漏识别的原文内容</span><span></span></div>
+      <div id="fb-missed-list"></div>
+      <button class="fb-add-btn" onclick="addFbMissedRow()">＋ 添加漏识别条目</button>
+
+      <div class="fb-divider"></div>
+
+      <div class="fb-section-title">⚠️ 误识别 <span style="font-weight:400;color:var(--gray);font-size:12px">（不应被脱敏但被替换了的内容）</span></div>
+      <div class="fb-col-hint-fp"><span>误识别的原文内容</span><span></span></div>
+      <div id="fb-fp-list"></div>
+      <button class="fb-add-btn" onclick="addFbFpRow()">＋ 添加误识别条目</button>
+    </div>
+    <!-- 成功视图 -->
+    <div class="fb-modal-body" id="fb-success-body" style="display:none">
+      <div class="fb-success-msg">
+        <div class="fb-ok-icon">✅</div>
+        <div style="font-size:16px;font-weight:600;margin-bottom:6px">反馈已提交</div>
+        <p>感谢您的纠正，系统将在下次处理时参考这些示例。</p>
+        <p id="fb-stats-line" style="color:var(--blue);font-size:13px"></p>
+        <div style="margin-top:20px;padding:14px;background:#f0fdf4;border-radius:8px;border:1px solid #bbf7d0">
+          <div style="font-size:14px;font-weight:600;margin-bottom:8px">是否立即用新的纠错重新生成脱敏结果？</div>
+          <div style="font-size:13px;color:var(--gray);margin-bottom:12px">将以原文件为基础新建一个处理任务，不影响当前记录。</div>
+          <div style="display:flex;gap:8px;justify-content:center">
+            <button class="btn btn-secondary btn-sm" onclick="closeFeedbackModal()">不需要，关闭</button>
+            <button class="btn btn-success btn-sm" onclick="reprocessAfterFeedback()">🔄 重新生成</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="fb-modal-footer" id="fb-form-footer">
+      <button class="btn btn-secondary btn-sm" onclick="closeFeedbackModal()">取消</button>
+      <button class="btn btn-primary btn-sm" onclick="submitFeedback()" id="fb-submit-btn">提交反馈</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ 历史记录还原弹窗 ════════════════════════════════════════════════════════ -->
+<div class="fb-overlay" id="hr-overlay">
+  <div class="fb-modal">
+    <div class="fb-modal-header">
+      <h3>🔄 从历史记录还原</h3>
+      <button class="qi-ctrl-btn cancel" onclick="closeHrModal()" style="width:28px;height:28px;font-size:16px">✕</button>
+    </div>
+    <div class="fb-modal-body">
+      <div style="font-size:13px;color:var(--gray);margin-bottom:14px;line-height:1.7">
+        上传 AI 审阅后的脱敏文档，系统将自动套用历史映射表
+        <b id="hr-mapname" style="color:var(--blue)"></b>
+        进行还原，完成后自动下载。
+      </div>
+      <div class="drop-zone" id="hr-dz"
+           onclick="document.getElementById('hr-file').click()"
+           ondragover="dzDragOver(event,'hr-dz')"
+           ondragleave="dzDragLeave('hr-dz')"
+           ondrop="dzDrop(event,'hr-dz','hr-file',onHrFileSelect)">
+        <div class="dz-icon">📄</div>
+        <div class="dz-label">点击或拖放脱敏文档</div>
+        <div class="dz-hint">支持 .docx &nbsp;·&nbsp; .xlsx / .xls &nbsp;·&nbsp; .csv &nbsp;·&nbsp; .pdf</div>
+        <input type="file" id="hr-file" accept=".docx,.xlsx,.xls,.csv,.pdf"
+               onchange="onHrFileSelect(this.files[0])">
+      </div>
+      <div id="hr-error" style="margin-top:8px"></div>
+    </div>
+    <div class="fb-modal-footer">
+      <button class="btn btn-secondary btn-sm" onclick="closeHrModal()">取消</button>
+      <button class="btn btn-primary btn-sm" id="hr-submit-btn" onclick="startHistRestore()" disabled>🔄 开始还原</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+// 用户状态
+// ═══════════════════════════════════════════════════════════════════════════
+let currentUser = '';
+let mainFile = null, restoreDocFile = null, restoreMapFile = null;
+
+function doLogin() {
+  const input = document.getElementById('login-username');
+  const name  = input.value.trim();
+  if (!name) { document.getElementById('login-error').textContent = '请输入姓名或工号'; return; }
+  if (name.length < 2) { document.getElementById('login-error').textContent = '至少输入 2 个字符'; return; }
+  setUser(name);
+}
+
+function setUser(name) {
+  currentUser = name;
+  localStorage.setItem('desensitize_user', name);
+  document.getElementById('header-username').textContent = name;
+  document.getElementById('login-overlay').classList.add('hidden');
+}
+
+function switchUser() {
+  if (!confirm('确认切换用户？当前页面数据将清除。')) return;
+  localStorage.removeItem('desensitize_user');
+  currentUser = '';
+  document.getElementById('login-overlay').classList.remove('hidden');
+  document.getElementById('login-username').value = '';
+  document.getElementById('login-error').textContent = '';
+  resetDesensitizeUpload(); resetRestoreUpload();
+}
+
+(function init() {
+  const saved = localStorage.getItem('desensitize_user');
+  if (saved && saved.length >= 2) { setUser(saved); }
+  else {
+    document.getElementById('login-overlay').classList.remove('hidden');
+    setTimeout(() => document.getElementById('login-username').focus(), 100);
+  }
+})();
+
+function authHeaders() { return { 'X-Username': encodeURIComponent(currentUser) }; }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Tab 切换
+// ═══════════════════════════════════════════════════════════════════════════
+function switchTab(panelId, btn) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById(panelId).classList.add('active');
+  btn.classList.add('active');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 拖放
+// ═══════════════════════════════════════════════════════════════════════════
+function dzDragOver(e, id) { e.preventDefault(); document.getElementById(id).classList.add('drag-over'); }
+function dzDragLeave(id) { document.getElementById(id).classList.remove('drag-over'); }
+function dzDrop(e, dzId, inputId, cb) {
+  e.preventDefault();
+  document.getElementById(dzId).classList.remove('drag-over');
+  const f = e.dataTransfer.files[0];
+  if (f) cb(f);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 文件选择
+// ═══════════════════════════════════════════════════════════════════════════
+function onMainFileSelect(file) {
+  if (!file) return;
+  mainFile = file;
+  const dz = document.getElementById('dz-main');
+  dz.classList.add('file-selected');
+  dz.querySelector('.dz-icon').textContent = '✅';
+  dz.querySelector('.dz-label').textContent = file.name;
+  dz.querySelector('.dz-hint').textContent = `大小：${fmtSize(file.size)}`;
+  document.getElementById('btn-desensitize').disabled = false;
+}
+
+function onRestoreDocSelect(file) {
+  if (!file) return; restoreDocFile = file;
+  setDzFile('dz-restore-doc', file.name); updateRestoreBtn();
+}
+function onRestoreMapSelect(file) {
+  if (!file) return; restoreMapFile = file;
+  setDzFile('dz-restore-map', file.name); updateRestoreBtn();
+}
+function setDzFile(id, name) {
+  const dz = document.getElementById(id);
+  dz.classList.add('file-selected');
+  dz.querySelector('.dz-icon').textContent = '✅';
+  dz.querySelector('.dz-label').textContent = name;
+}
+function updateRestoreBtn() {
+  document.getElementById('btn-restore').disabled = !(restoreDocFile && restoreMapFile);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 重置上传区（不清队列）
+// ═══════════════════════════════════════════════════════════════════════════
+function resetDesensitizeUpload() {
+  mainFile = null;
+  const dz = document.getElementById('dz-main');
+  dz.classList.remove('file-selected');
+  dz.querySelector('.dz-icon').textContent = '📁';
+  dz.querySelector('.dz-label').textContent = '拖放文件到此处，或点击选择';
+  dz.querySelector('.dz-hint').textContent = '支持格式：.docx · .xlsx / .xls · .csv · .pdf（可选中文字）';
+  document.getElementById('file-main').value = '';
+  document.getElementById('custom-instructions').value = '';
+  document.getElementById('desensitize-error').innerHTML = '';
+  updateDesensitizeButton();
+}
+
+function resetRestoreUpload() {
+  restoreDocFile = restoreMapFile = null;
+  [['dz-restore-doc','📄'],['dz-restore-map','📊']].forEach(([id, icon]) => {
+    const dz = document.getElementById(id);
+    dz.classList.remove('file-selected');
+    dz.querySelector('.dz-icon').textContent = icon;
+    dz.querySelector('.dz-label').textContent = '点击或拖放文档';
+  });
+  document.getElementById('btn-restore').disabled = true;
+  document.getElementById('restore-error').innerHTML = '';
+  document.getElementById('file-restore-doc').value = '';
+  document.getElementById('file-restore-map').value = '';
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 任务队列状态
+// ═══════════════════════════════════════════════════════════════════════════
+// 每个 job 对象结构：
+// { job_id, filename, mode:'desensitize'|'restore', status, progress_pct,
+//   progress, queue_position, started_at, desensitized_filename,
+//   mapping_filename, entity_count, categories, warning,
+//   restored_filename, replacement_count, error }
+let jobQueue = [];
+let pollTimer = null;
+
+// ── 提交脱敏 ──────────────────────────────────────────────────────────────
+async function startDesensitize() {
+  if (!mainFile) return;
+  const btn = document.getElementById('btn-desensitize');
+  btn.disabled = true;
+  document.getElementById('desensitize-error').innerHTML = '';
+
+  const fd = new FormData();
+  fd.append('file', mainFile);
+  fd.append('custom_instructions', document.getElementById('custom-instructions').value);
+
+  let resp, data;
+  try {
+    resp = await fetch('/api/desensitize', { method: 'POST', headers: authHeaders(), body: fd });
+  } catch(e) {
+    document.getElementById('desensitize-error').innerHTML = errorHTML('网络错误，无法连接到服务（请确认服务正在运行）');
+    btn.disabled = !mainFile;
+    return;
+  }
+  try {
+    data = await resp.json();
+  } catch(e) {
+    document.getElementById('desensitize-error').innerHTML = errorHTML(`服务器返回了非预期的响应（HTTP ${resp.status}），请检查服务端日志`);
+    btn.disabled = !mainFile;
+    return;
+  }
+
+  if (!resp.ok) {
+    document.getElementById('desensitize-error').innerHTML = errorHTML(data.error || '上传失败');
+    btn.disabled = !mainFile;
+    return;
+  }
+
+  // 加入队列
+  jobQueue.push({
+    job_id: data.job_id,
+    filename: mainFile.name,
+    mode: 'desensitize',
+    status: 'queued',
+    progress_pct: 0,
+    progress: '等待处理...',
+    queue_position: data.queue_position,
+    started_at: null,
+    desensitized_filename: null,
+    mapping_filename: null,
+    entity_count: 0,
+    categories: {},
+    warning: null,
+    error: null
+  });
+
+  // 重置上传区（允许继续添加新文件）
+  resetDesensitizeUpload();
+  renderQueues();
+  startPolling();
+}
+
+// ── 提交还原 ──────────────────────────────────────────────────────────────
+async function startRestore() {
+  if (!restoreDocFile || !restoreMapFile) return;
+  const btn = document.getElementById('btn-restore');
+  btn.disabled = true;
+  document.getElementById('restore-error').innerHTML = '';
+
+  const fd = new FormData();
+  fd.append('doc_file', restoreDocFile);
+  fd.append('mapping_file', restoreMapFile);
+
+  let resp, data;
+  try {
+    resp = await fetch('/api/restore', { method: 'POST', headers: authHeaders(), body: fd });
+  } catch(e) {
+    document.getElementById('restore-error').innerHTML = errorHTML('网络错误，无法连接到服务（请确认服务正在运行）');
+    btn.disabled = false;
+    return;
+  }
+  try {
+    data = await resp.json();
+  } catch(e) {
+    document.getElementById('restore-error').innerHTML = errorHTML(`服务器返回了非预期的响应（HTTP ${resp.status}），请检查服务端日志`);
+    btn.disabled = false;
+    return;
+  }
+
+  if (!resp.ok) {
+    document.getElementById('restore-error').innerHTML = errorHTML(data.error || '上传失败');
+    btn.disabled = false;
+    return;
+  }
+
+  jobQueue.push({
+    job_id: data.job_id,
+    filename: restoreDocFile.name,
+    mode: 'restore',
+    status: 'queued',
+    progress_pct: 0,
+    progress: '等待处理...',
+    queue_position: data.queue_position,
+    started_at: null,
+    restored_filename: null,
+    replacement_count: 0,
+    error: null
+  });
+
+  resetRestoreUpload();
+  renderQueues();
+  startPolling();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 轮询所有活跃任务
+// ═══════════════════════════════════════════════════════════════════════════
+function startPolling() {
+  if (pollTimer) return;
+  pollTimer = setInterval(pollAllJobs, 2500);
+}
+
+async function pollAllJobs() {
+  const active = jobQueue.filter(j => j.status === 'queued' || j.status === 'processing' || j.progress === '正在取消...');
+  if (active.length === 0) {
+    clearInterval(pollTimer); pollTimer = null;
+    updateDesensitizeButton();
+    return;
+  }
+
+  await Promise.all(active.map(async (job) => {
+    try {
+      const prevStatus = job.status;
+      const resp = await fetch('/api/status/' + job.job_id);
+      // 404 = 服务器已重启导致内存任务记录丢失，将该任务标记为过期错误
+      if (resp.status === 404) {
+        job.status = 'error';
+        job.error  = '任务记录已丢失（服务器可能已重启），请重新上传文件';
+        return;
+      }
+      if (!resp.ok) return;
+      const d = await resp.json();
+      // 合并服务端返回的字段
+      if (d.status)    job.status    = d.status;
+      if (d.progress)  job.progress  = d.progress;
+      if (d.progress_pct !== undefined) job.progress_pct = d.progress_pct;
+      if (d.queue_position !== undefined) job.queue_position = d.queue_position;
+      if (d.started_at !== undefined)    job.started_at = d.started_at;
+      if (d.desensitized_filename) job.desensitized_filename = d.desensitized_filename;
+      if (d.mapping_filename)      job.mapping_filename      = d.mapping_filename;
+      if (d.entity_count !== undefined)  job.entity_count  = d.entity_count;
+      if (d.categories)  job.categories  = d.categories;
+      if (d.warning)     job.warning     = d.warning;
+      if (d.restored_filename)   job.restored_filename   = d.restored_filename;
+      if (d.replacement_count !== undefined) job.replacement_count = d.replacement_count;
+      if (d.error)       job.error       = d.error;
+
+      // hist-restore 完成后自动触发下载
+      if (job.mode === 'hist-restore' && job._autoDownload
+          && prevStatus !== 'completed' && job.status === 'completed'
+          && job.restored_filename) {
+        setTimeout(() => dlFile('/api/download/' + job.job_id + '/restored', job.restored_filename), 600);
+      }
+    } catch(e) {}
+  }));
+
+  renderQueues();
+  updateDesensitizeButton();
+}
+
+// ─ 强制每帧刷新进度（处理动画插值）────────────────────────────────────────
+let animFrameId = null;
+function startAnimLoop() {
+  if (animFrameId) return;
+  function tick() {
+    const hasProcessing = jobQueue.some(j => j.status === 'processing');
+    if (hasProcessing) {
+      renderQueues();
+      animFrameId = requestAnimationFrame(tick);
+    } else {
+      animFrameId = null;
+    }
+  }
+  animFrameId = requestAnimationFrame(tick);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 取消任务 / 调整顺序
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function cancelJob(jobId) {
+  const job = jobQueue.find(j => j.job_id === jobId);
+  if (!job) return;
+
+  // 运行中需二次确认
+  if (job.status === 'processing') {
+    if (!confirm('确认停止正在处理中的任务？\n（AI 识别调用完成后才会真正停止，结果将被丢弃。）')) return;
+  }
+
+  try {
+    const resp = await fetch('/api/job/' + jobId, {
+      method: 'DELETE',
+      headers: authHeaders(),
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      if (job.status === 'queued') {
+        // 排队任务立即标记已取消
+        job.status   = 'cancelled';
+        job.progress = '已取消';
+        job.progress_pct = 0;
+      } else {
+        // 运行中：服务端已设标志，等待下次轮询更新
+        job.progress = '正在取消...';
+      }
+      renderQueues();
+    }
+  } catch(e) {}
+}
+
+async function reorderJob(jobId, direction) {
+  try {
+    const resp = await fetch('/api/queue/reorder', {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ job_id: jobId, direction }),
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      // 本地同步调整 jobQueue 中同 mode 的排队任务顺序
+      const job = jobQueue.find(j => j.job_id === jobId);
+      if (!job) return;
+      const modeQueued = jobQueue
+        .map((j, i) => ({ j, i }))
+        .filter(({ j }) => j.mode === job.mode && j.status === 'queued');
+      const pos = modeQueued.findIndex(({ j }) => j.job_id === jobId);
+      if (direction === 'up' && pos > 0) {
+        const a = modeQueued[pos].i, b = modeQueued[pos - 1].i;
+        [jobQueue[a], jobQueue[b]] = [jobQueue[b], jobQueue[a]];
+      } else if (direction === 'down' && pos < modeQueued.length - 1) {
+        const a = modeQueued[pos].i, b = modeQueued[pos + 1].i;
+        [jobQueue[a], jobQueue[b]] = [jobQueue[b], jobQueue[a]];
+      }
+      renderQueues();
+    }
+  } catch(e) {}
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 渲染队列
+// ═══════════════════════════════════════════════════════════════════════════
+function clearDoneJobs(mode) {
+  const done = new Set(['completed', 'error', 'cancelled']);
+  jobQueue = jobQueue.filter(j => !(j.mode === mode && done.has(j.status)));
+  renderQueues();
+}
+
+function renderQueues() {
+  renderModeQueue('desensitize', 'dequeue-panel',  'dequeue-list',  'dequeue-count-pill');
+  renderModeQueue('restore',     'requeue-panel',  'requeue-list',  'requeue-count-pill');
+  renderModeQueue('hist-restore','hrqueue-panel',  'hrqueue-list',  'hrqueue-count-pill');
+
+  // 如果有 processing 任务，启动动画帧循环
+  if (jobQueue.some(j => j.status === 'processing')) startAnimLoop();
+}
+
+function renderModeQueue(mode, panelId, listId, pillId) {
+  const jobs = jobQueue.filter(j => j.mode === mode);
+  const panel = document.getElementById(panelId);
+  const list  = document.getElementById(listId);
+  const pill  = document.getElementById(pillId);
+
+  if (jobs.length === 0) { panel.style.display = 'none'; return; }
+  panel.style.display = 'block';
+
+  const activeCount = jobs.filter(j => j.status === 'queued' || j.status === 'processing').length;
+  pill.textContent = activeCount > 0 ? activeCount : jobs.length;
+  pill.className = 'queue-count-pill' + (activeCount === 0 ? ' done' : '');
+
+  // 只更新各条目（避免全量重绘导致闪烁）
+  const existing = {};
+  list.querySelectorAll('[data-job-id]').forEach(el => { existing[el.dataset.jobId] = el; });
+
+  // 新列表 HTML
+  const newHtml = jobs.map(j => renderQueueItem(j)).join('');
+
+  // 若数量或顺序不变，只更新内容
+  const newJobIds = jobs.map(j => j.job_id).join(',');
+  const curJobIds = [...list.querySelectorAll('[data-job-id]')].map(el => el.dataset.jobId).join(',');
+
+  if (newJobIds !== curJobIds) {
+    list.innerHTML = newHtml;
+  } else {
+    // 逐条更新
+    jobs.forEach(j => {
+      const el = existing[j.job_id];
+      if (el) el.outerHTML = renderQueueItem(j);
+      // Note: outerHTML replacement doesn't work in-place reliably; fallback to full redraw
+    });
+    // Safe fallback: just replace innerHTML since count matches
+    list.innerHTML = newHtml;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 渲染单条队列项
+// ═══════════════════════════════════════════════════════════════════════════
+function renderQueueItem(job) {
+  const dispPct = getDisplayPct(job);
+  const remaining = getRemaining(job);
+
+  // 文件名区域
+  let fnHtml;
+  if (job.status === 'completed') {
+    const newName = job.desensitized_filename || job.restored_filename;
+    if (newName) {
+      fnHtml = `<span>${escHtml(job.filename)}</span><span class="arrow"> → </span><span class="new-name">${escHtml(newName)}</span>`;
+    } else {
+      fnHtml = escHtml(job.filename);
+    }
+  } else {
+    fnHtml = escHtml(job.filename);
+  }
+
+  // 状态徽章
+  let badge;
+  if (job.status === 'queued') {
+    const pos = job.queue_position;
+    const posText = pos > 0 ? `前方 ${pos} 个` : '即将开始';
+    badge = `<span class="status-badge badge-queued">⏳ 排队中 · ${posText}</span>`;
+  } else if (job.status === 'processing') {
+    badge = `<span class="status-badge badge-processing"><span class="mini-spin"></span> 处理中</span>`;
+  } else if (job.status === 'completed') {
+    badge = `<span class="status-badge badge-completed">✅ 完成</span>`;
+  } else if (job.status === 'cancelled') {
+    badge = `<span class="status-badge badge-cancelled">🚫 已取消</span>`;
+  } else {
+    badge = `<span class="status-badge badge-error">❌ 失败</span>`;
+  }
+
+  // 右侧控制按钮（取消 + 调序）
+  let ctrlHtml = '';
+  if (job.status === 'queued') {
+    // 同一模式下所有排队任务
+    const modeJobs = jobQueue.filter(j => j.mode === job.mode && j.status === 'queued');
+    const qIdx = modeJobs.findIndex(j => j.job_id === job.job_id);
+    const canUp   = qIdx > 0;
+    const canDown = qIdx < modeJobs.length - 1;
+    ctrlHtml = `<div class="qi-ctrl">
+      <button class="qi-ctrl-btn" title="提前" onclick="reorderJob('${job.job_id}','up')"   ${canUp   ? '' : 'disabled'}>↑</button>
+      <button class="qi-ctrl-btn" title="推后" onclick="reorderJob('${job.job_id}','down')" ${canDown ? '' : 'disabled'}>↓</button>
+      <button class="qi-ctrl-btn cancel" title="取消任务" onclick="cancelJob('${job.job_id}')">✕</button>
+    </div>`;
+  } else if (job.status === 'processing') {
+    ctrlHtml = `<div class="qi-ctrl">
+      <button class="qi-ctrl-btn cancel" title="请求停止" onclick="cancelJob('${job.job_id}')">■ 停止</button>
+    </div>`;
+  }
+
+  // 进度条区域
+  let progHtml = '';
+  if (job.status === 'queued') {
+    progHtml = `
+      <div class="prog-meta">
+        <span class="step-text">${escHtml(job.progress)}</span>
+      </div>
+      <div class="prog-track"><div class="prog-fill" style="width:0%"></div></div>`;
+  } else if (job.status === 'cancelled') {
+    progHtml = `
+      <div class="prog-track" style="margin:6px 0">
+        <div class="prog-fill" style="width:100%;background:var(--border)"></div>
+      </div>`;
+  } else if (job.status === 'processing') {
+    const fillCls = '';
+    const timeText = remaining || (job.started_at ? fmtElapsed(Date.now()/1000 - job.started_at) : '');
+    progHtml = `
+      <div class="prog-meta">
+        <span class="step-text">${escHtml(job.progress)}</span>
+        <span class="time-text">${escHtml(timeText)}</span>
+      </div>
+      <div class="prog-track">
+        <div class="prog-fill ${fillCls}" style="width:${dispPct}%"></div>
+      </div>
+      <div style="font-size:11px;color:var(--gray);margin-top:2px;text-align:right">${dispPct}%</div>`;
+  } else if (job.status === 'completed') {
+    progHtml = `
+      <div class="prog-track" style="margin:6px 0">
+        <div class="prog-fill fill-done" style="width:100%"></div>
+      </div>`;
+  } else if (job.status === 'error') {
+    progHtml = `
+      <div class="prog-track" style="margin:6px 0">
+        <div class="prog-fill fill-error" style="width:${dispPct}%"></div>
+      </div>
+      <div style="color:var(--error);font-size:13px;margin-top:4px">❌ ${escHtml(job.error || '处理失败，请重试')}</div>`;
+  }
+
+  // 完成后的操作区
+  let actionsHtml = '';
+  if (job.status === 'completed') {
+    if (job.warning) {
+      actionsHtml = `<div class="qi-actions"><span style="color:var(--warn);font-size:13px">⚠️ ${escHtml(job.warning)}</span></div>`;
+    } else if (job.mode === 'desensitize') {
+      const tagHtml = Object.entries(job.categories || {})
+        .map(([k,v]) => `<span class="tag">${escHtml(k)} <b>${v}</b></span>`).join('');
+      const deName = job.desensitized_filename || '';
+      const mapName = job.mapping_filename || '';
+      // 使用 dlFile() 触发下载，兼容 Edge 对动态注入链接的安全限制
+      actionsHtml = `
+        ${tagHtml ? `<div class="category-tags" style="margin:6px 0">${tagHtml}</div>` : ''}
+        <div class="qi-actions">
+          ${deName ? `<button class="btn btn-success btn-sm" onclick="dlFile('/api/download/${job.job_id}/desensitized',${escHtml(JSON.stringify(deName))})">⬇️ ${escHtml(deName)}</button>` : ''}
+          ${mapName ? `<button class="btn btn-secondary btn-sm" onclick="dlFile('/api/download/${job.job_id}/mapping',${escHtml(JSON.stringify(mapName))})">📊 映射表</button>` : ''}
+          <button class="btn btn-secondary btn-sm" onclick="openFeedbackModal('${job.job_id}',${escHtml(JSON.stringify(job.filename))})">✏️ 纠错</button>
+        </div>
+        <div class="qi-meta">识别 ${job.entity_count} 个敏感实体 · 文件 7 天后自动删除</div>`;
+    } else if (job.mode === 'restore' || job.mode === 'hist-restore') {
+      const rName = job.restored_filename || '';
+      const autoTag = job.mode === 'hist-restore'
+        ? `<span style="font-size:11px;color:var(--success);margin-left:6px">✅ 已自动下载</span>`
+        : '';
+      actionsHtml = `
+        <div class="qi-actions">
+          ${rName ? `<button class="btn btn-success btn-sm" onclick="dlFile('/api/download/${job.job_id}/restored',${escHtml(JSON.stringify(rName))})">⬇️ ${escHtml(rName)}</button>${autoTag}` : ''}
+        </div>
+        <div class="qi-meta">还原 ${job.replacement_count || 0} 处 · 文件 7 天后自动删除</div>`;
+    }
+  }
+
+  return `<div class="queue-item" data-job-id="${job.job_id}">
+    <div class="qi-header">
+      <div class="qi-filename">${fnHtml}</div>
+      <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+        ${badge}
+        ${ctrlHtml}
+      </div>
+    </div>
+    ${progHtml}
+    ${actionsHtml}
+  </div>`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 进度计算
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * 获取显示用进度百分比（在 AI 识别阶段做客户端时间插值动画）
+ */
+function getDisplayPct(job) {
+  if (job.status === 'completed') return 100;
+  if (job.status === 'error')     return job.progress_pct || 0;
+  if (job.status === 'queued')    return 0;
+
+  const pct = job.progress_pct || 5;
+
+  // AI 识别阶段（后端 progress_pct 停在 20 等待约 2-8 分钟）
+  // 客户端根据已用时间，在 20-79% 区间内做缓慢动画：约 8 分钟到 79%
+  if (pct >= 20 && pct < 80 && job.started_at) {
+    const elapsed = Date.now() / 1000 - job.started_at;
+    // 从进入 AI 阶段后（粗略减去 15s 读文档时间），每 8 秒涨 1%
+    const aiElapsed = Math.max(0, elapsed - 15);
+    const animated = Math.min(20 + aiElapsed * (59 / 480), 79);
+    return Math.floor(Math.max(pct, animated));
+  }
+
+  return pct;
+}
+
+/**
+ * 估算剩余时间文字。返回 null 则显示已用时间。
+ */
+function getRemaining(job) {
+  if (job.status !== 'processing' || !job.started_at) return null;
+  const elapsed = Date.now() / 1000 - job.started_at;
+  if (elapsed < 8) return null;
+
+  const dispPct = getDisplayPct(job);
+  if (dispPct <= 5 || dispPct >= 95) return null;
+
+  // 用已完成比例估算总时间
+  const rate = dispPct / elapsed;   // %/s
+  if (rate <= 0) return null;
+  const remaining = (100 - dispPct) / rate;
+
+  if (remaining < 10) return '即将完成';
+  if (remaining < 60) return `剩余约 ${Math.ceil(remaining)} 秒`;
+  return `剩余约 ${Math.ceil(remaining / 60)} 分钟`;
+}
+
+function fmtElapsed(secs) {
+  if (secs < 60) return `已处理 ${Math.floor(secs)} 秒`;
+  const m = Math.floor(secs / 60), s = Math.floor(secs % 60);
+  return `已处理 ${m}m ${s}s`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 脱敏按钮文字
+// ═══════════════════════════════════════════════════════════════════════════
+function updateDesensitizeButton() {
+  const btn = document.getElementById('btn-desensitize');
+  const hasActive = jobQueue.some(j => j.status === 'queued' || j.status === 'processing');
+  btn.innerHTML = hasActive ? '➕ 加入脱敏队列' : '🚀 开始脱敏';
+  btn.disabled = !mainFile;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 历史记录
+// ═══════════════════════════════════════════════════════════════════════════
+async function loadHistory() {
+  const container = document.getElementById('history-list');
+  container.innerHTML = '<div class="history-empty">加载中...</div>';
+  let resp;
+  try { resp = await fetch('/api/history', { headers: authHeaders() }); }
+  catch(e) { container.innerHTML = '<div class="history-empty">加载失败</div>'; return; }
+
+  const data = await resp.json();
+  const records = data.history || [];
+  if (!records.length) { container.innerHTML = '<div class="history-empty">暂无历史记录</div>'; return; }
+
+  container.innerHTML = records.map(r => {
+    const ts = r.timestamp ? r.timestamp.replace('T',' ') : '';
+    const tagHtml = Object.entries(r.categories || {})
+      .map(([k,v]) => `<span class="tag">${escHtml(k)} <b>${v}</b></span>`).join('');
+    const hasDe = r.files_exist?.desensitized;
+    const hasMap = r.files_exist?.mapping;
+    const deName = r.desensitized_filename || '';
+    const mapName = r.mapping_filename || '';
+    const safeFilename = escHtml(r.original_filename).replace(/'/g,"\\'");
+    const safeMapName  = escHtml(mapName).replace(/'/g,"\\'");
+    return `<div class="history-item">
+      <div class="history-item-header">
+        <div>
+          <div class="history-filename">📄 ${escHtml(r.original_filename)}</div>
+          ${deName ? `<div class="history-meta" style="color:var(--success);margin-top:2px">→ ${escHtml(deName)}</div>` : ''}
+          <div class="history-meta">${ts} · 识别 ${r.entity_count} 个实体</div>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+          ${hasMap ? `<button class="btn btn-primary btn-sm" onclick="openHrModal('${r.id}','${safeMapName}')">🔄 还原</button>` : ''}
+          <button class="btn btn-secondary btn-sm" onclick="openFeedbackModal('${r.id}','${safeFilename}')">✏️ 纠错</button>
+          <button class="btn btn-danger" onclick="deleteHistory('${r.id}')">删除</button>
+        </div>
+      </div>
+      ${tagHtml ? `<div class="category-tags">${tagHtml}</div>` : ''}
+      <div class="history-actions">
+        ${hasDe ? `<a class="btn btn-success btn-sm" href="/api/download/${r.id}/desensitized" download="${escHtml(deName)}">⬇️ ${escHtml(deName)}</a>` : '<span style="font-size:12px;color:var(--gray)">文件已过期</span>'}
+        ${hasMap ? `<a class="btn btn-secondary btn-sm" href="/api/download/${r.id}/mapping" download="${escHtml(mapName)}">📊 映射表</a>` : ''}
+        ${!hasMap && !hasDe ? '' : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function deleteHistory(jobId) {
+  if (!confirm('确认删除这条历史记录？')) return;
+  await fetch('/api/history/' + jobId, { method: 'DELETE', headers: authHeaders() });
+  loadHistory();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 历史记录一键还原
+// ═══════════════════════════════════════════════════════════════════════════
+let _hrSourceJobId = '';
+let _hrDocFile = null;
+
+function openHrModal(sourceJobId, mapName) {
+  _hrSourceJobId = sourceJobId;
+  _hrDocFile = null;
+
+  // 重置弹窗状态
+  const dz = document.getElementById('hr-dz');
+  dz.classList.remove('file-selected');
+  dz.querySelector('.dz-icon').textContent = '📄';
+  dz.querySelector('.dz-label').textContent = '点击或拖放脱敏文档';
+  dz.querySelector('.dz-hint').textContent = '支持 .docx · .xlsx / .xls · .csv · .pdf';
+  document.getElementById('hr-file').value = '';
+  document.getElementById('hr-error').innerHTML = '';
+  document.getElementById('hr-submit-btn').disabled = true;
+  document.getElementById('hr-mapname').textContent = mapName || '映射表';
+
+  document.getElementById('hr-overlay').classList.add('open');
+}
+
+function closeHrModal() {
+  document.getElementById('hr-overlay').classList.remove('open');
+}
+
+function onHrFileSelect(file) {
+  if (!file) return;
+  _hrDocFile = file;
+  const dz = document.getElementById('hr-dz');
+  dz.classList.add('file-selected');
+  dz.querySelector('.dz-icon').textContent = '✅';
+  dz.querySelector('.dz-label').textContent = file.name;
+  dz.querySelector('.dz-hint').textContent = `大小：${fmtSize(file.size)}`;
+  document.getElementById('hr-submit-btn').disabled = false;
+}
+
+async function startHistRestore() {
+  if (!_hrDocFile || !_hrSourceJobId) return;
+  const btn = document.getElementById('hr-submit-btn');
+  btn.disabled = true;
+  btn.textContent = '提交中...';
+  document.getElementById('hr-error').innerHTML = '';
+
+  const fd = new FormData();
+  fd.append('doc_file', _hrDocFile);
+  fd.append('source_job_id', _hrSourceJobId);
+
+  let resp, data;
+  try {
+    resp = await fetch('/api/restore_from_job', { method: 'POST', headers: authHeaders(), body: fd });
+  } catch(e) {
+    document.getElementById('hr-error').innerHTML = errorHTML('网络错误，无法连接到服务');
+    btn.disabled = false; btn.textContent = '🔄 开始还原';
+    return;
+  }
+  try { data = await resp.json(); } catch(e) {
+    document.getElementById('hr-error').innerHTML = errorHTML(`服务器返回了非预期的响应（HTTP ${resp.status}）`);
+    btn.disabled = false; btn.textContent = '🔄 开始还原';
+    return;
+  }
+  if (!resp.ok) {
+    document.getElementById('hr-error').innerHTML = errorHTML(data.error || '提交失败');
+    btn.disabled = false; btn.textContent = '🔄 开始还原';
+    return;
+  }
+
+  // 加入队列并关闭弹窗
+  jobQueue.push({
+    job_id: data.job_id,
+    filename: _hrDocFile.name,
+    mode: 'hist-restore',
+    status: 'queued',
+    progress_pct: 0,
+    progress: '等待处理...',
+    queue_position: data.queue_position,
+    started_at: null,
+    restored_filename: null,
+    replacement_count: 0,
+    error: null,
+    _autoDownload: true   // 完成后自动触发下载
+  });
+
+  closeHrModal();
+
+  // 切换到历史 Tab 显示进度（如果当前不在历史 Tab）
+  const histBtn = document.querySelector('.tab-btn[data-tab="tab-history"]');
+  if (histBtn && !document.getElementById('tab-history').classList.contains('active')) {
+    switchTab('tab-history', histBtn);
+    loadHistory();
+  }
+
+  renderQueues();
+  startPolling();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 系统状态
+// ═══════════════════════════════════════════════════════════════════════════
+async function loadSystemStatus() {
+  const el = document.getElementById('system-status');
+  el.innerHTML = '检查中...';
+  try {
+    const resp = await fetch('/api/settings');
+    const data = await resp.json();
+    if (data.ready) {
+      el.innerHTML = `<span class="status-ok">✅ ${escHtml(data.message)}</span>
+        <span style="font-size:12px;color:var(--gray);margin-left:10px">模型：${escHtml(data.model)} · 文件保留 ${data.cleanup_days} 天</span>`;
+    } else {
+      el.innerHTML = `<span class="status-fail">⚠️ ${escHtml(data.message)}</span>`;
+    }
+  } catch(e) {
+    el.innerHTML = '<span class="status-fail">⚠️ 无法获取服务状态</span>';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 工具函数
+// ═══════════════════════════════════════════════════════════════════════════
+function errorHTML(msg) {
+  return `<div class="error-box" style="margin-top:14px"><strong>操作失败</strong>${escHtml(msg)}</div>`;
+}
+
+function escHtml(s) {
+  return String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function fmtSize(b) {
+  if (b < 1024) return b + ' B';
+  if (b < 1048576) return (b/1024).toFixed(1) + ' KB';
+  return (b/1048576).toFixed(1) + ' MB';
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 兼容 Edge 的文件下载（避免 Edge 对动态注入 <a> 的安全限制）
+// ═══════════════════════════════════════════════════════════════════════════
+function dlFile(url, filename) {
+  try {
+    const a = document.createElement('a');
+    a.href = url;
+    a.setAttribute('download', filename);
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function() {
+      try { document.body.removeChild(a); } catch(e) {}
+    }, 1000);
+  } catch(e) {
+    // 降级：直接跳转
+    window.location.href = url;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 纠错弹窗
+// ═══════════════════════════════════════════════════════════════════════════
+
+const FB_CATEGORIES = [
+  '公司/机构名称','人名','地址','联系方式','电子邮箱',
+  '网址/域名','账号/用户名','银行及金融信息','证件编号',
+  '金额','项目/产品名称','合同编号/出版物号/ISBN/软著号/著作权编号','游戏名称'
+];
+
+let _fbJobId = '';
+let _fbFilename = '';
+
+function openFeedbackModal(jobId, filename) {
+  _fbJobId = jobId;
+  _fbFilename = filename;
+
+  // 重置为表单视图
+  document.getElementById('fb-form-body').style.display = '';
+  document.getElementById('fb-success-body').style.display = 'none';
+  document.getElementById('fb-form-footer').style.display = '';
+  document.getElementById('fb-submit-btn').disabled = false;
+  document.getElementById('fb-submit-btn').textContent = '提交反馈';
+
+  // 清空列表
+  document.getElementById('fb-missed-list').innerHTML = '';
+  document.getElementById('fb-fp-list').innerHTML = '';
+
+  // 默认加一行漏识别输入
+  addFbMissedRow();
+
+  document.getElementById('fb-overlay').classList.add('open');
+}
+
+function closeFeedbackModal() {
+  document.getElementById('fb-overlay').classList.remove('open');
+}
+
+function addFbMissedRow() {
+  const list = document.getElementById('fb-missed-list');
+  const idx = Date.now();
+  const optHtml = FB_CATEGORIES.map(c => `<option value="${escHtml(c)}">${escHtml(c)}</option>`).join('');
+  const div = document.createElement('div');
+  div.className = 'fb-row';
+  div.id = 'fb-missed-' + idx;
+  div.innerHTML = `
+    <select data-fb="cat">${optHtml}</select>
+    <input type="text" data-fb="orig" placeholder="漏识别的原文内容">
+    <button class="fb-del-btn" onclick="removeFbRow('fb-missed-${idx}')">✕</button>`;
+  list.appendChild(div);
+}
+
+function addFbFpRow() {
+  const list = document.getElementById('fb-fp-list');
+  const idx = Date.now();
+  const div = document.createElement('div');
+  div.className = 'fb-fp-row';
+  div.id = 'fb-fp-' + idx;
+  div.innerHTML = `
+    <input type="text" data-fb="orig" placeholder="被误识别的原文内容">
+    <button class="fb-del-btn" onclick="removeFbRow('fb-fp-${idx}')">✕</button>`;
+  list.appendChild(div);
+}
+
+function removeFbRow(id) {
+  const el = document.getElementById(id);
+  if (el) el.remove();
+}
+
+async function submitFeedback() {
+  // 收集漏识别
+  const missedRows = document.querySelectorAll('#fb-missed-list .fb-row');
+  const missed = [];
+  missedRows.forEach(row => {
+    const cat  = row.querySelector('[data-fb="cat"]')?.value?.trim() || '';
+    const orig = row.querySelector('[data-fb="orig"]')?.value?.trim() || '';
+    if (orig) missed.push({ category: cat, original: orig });
+  });
+
+  // 收集误识别
+  const fpRows = document.querySelectorAll('#fb-fp-list .fb-fp-row');
+  const falsePositive = [];
+  fpRows.forEach(row => {
+    const orig = row.querySelector('[data-fb="orig"]')?.value?.trim() || '';
+    if (orig) falsePositive.push({ original: orig });
+  });
+
+  if (!missed.length && !falsePositive.length) {
+    alert('请至少填写一条漏识别或误识别内容。');
+    return;
+  }
+
+  const btn = document.getElementById('fb-submit-btn');
+  btn.disabled = true;
+  btn.textContent = '提交中...';
+
+  try {
+    const resp = await fetch('/api/feedback', {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ job_id: _fbJobId, missed, false_positive: falsePositive })
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || '提交失败');
+
+    // 切到成功视图
+    document.getElementById('fb-form-body').style.display = 'none';
+    document.getElementById('fb-form-footer').style.display = 'none';
+    document.getElementById('fb-success-body').style.display = '';
+
+    const stats = data.stats || {};
+    document.getElementById('fb-stats-line').textContent =
+      `累计纠错 ${stats.total_feedback_records || 0} 次，共 ${stats.total_missed_items || 0} 条漏识别记录`;
+
+  } catch(e) {
+    btn.disabled = false;
+    btn.textContent = '提交反馈';
+    alert('提交失败：' + e.message);
+  }
+}
+
+async function reprocessAfterFeedback() {
+  closeFeedbackModal();
+  try {
+    const resp = await fetch('/api/reprocess/' + _fbJobId, {
+      method: 'POST',
+      headers: authHeaders()
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || '无法创建重新处理任务');
+
+    // 切到脱敏 Tab 并显示新任务
+    const tabBtn = document.querySelector('.tab-btn');  // 第一个 tab = 脱敏
+    switchTab('tab-desensitize', tabBtn);
+
+    // 把新 job 加入队列显示
+    const newJob = {
+      job_id: data.job_id,
+      filename: data.filename,
+      mode: 'desensitize',
+      status: 'queued',
+      progress: '等待处理（重新生成）...',
+      progress_pct: 0,
+      queue_position: data.queue_position || 1,
+      entity_count: 0,
+      categories: {}
+    };
+    jobQueue.unshift(newJob);
+    renderQueues();
+    startPolling();
+  } catch(e) {
+    alert('创建重新处理任务失败：' + e.message);
+  }
+}
+</script>
+</body>
+</html>
