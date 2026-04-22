@@ -149,6 +149,20 @@ def _replace_text(text: str, sorted_pairs: list) -> str:
     return text
 
 
+def tokenize_text_with_mapping(text: str, mapping: dict) -> str:
+    """将原文按映射表替换为脱敏 token/替代值，适用于发送给外部 AI。"""
+    if not text or not mapping:
+        return text
+    return _replace_text(text, _sorted_mapping(mapping))
+
+
+def restore_text_with_mapping(text: str, reverse_mapping: dict) -> str:
+    """将外部 AI 返回文本按反向映射还原为原文。"""
+    if not text or not reverse_mapping:
+        return text
+    return _replace_text(text, _sorted_mapping(reverse_mapping))
+
+
 def _apply_docx(input_path: Path, output_path: Path, mapping: dict):
     doc = Document(str(input_path))
     pairs = _sorted_mapping(mapping)

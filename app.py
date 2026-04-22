@@ -202,6 +202,7 @@ def _process_desensitize(job_id: str, upload_path: Path,
                 "mapping_filename": None,
                 "warning": "未识别到需要脱敏的敏感信息，请确认文档内容或调整自定义指令。"
             })
+            _save_state(job_id)   # 持久化"未识别到实体"的完成状态
             return
 
         jobs[job_id]["progress"] = f"识别到 {len(entities)} 个敏感实体，正在生成脱敏文档..."
@@ -390,11 +391,87 @@ class SettingsHandler(BaseHandler):
         self.write_json({
             "ready": ready,
             "message": msg,
+            "api_url": api_url,
             "model": model,
             "model_2": model_2,
             "dual_model": dual,
             "cleanup_days": cfg.get("cleanup_days", 7),
         })
+
+
+class SecureLlmHandler(BaseHandler):
+    """
+    POST /api/secure_llm
+    连贯链路：本地识别并脱敏 -> 外部 AI 处理 -> 自动还原结果。
+    """
+    def post(self):
+        try:
+            body = json.loads(self.request.body or b"{}")
+        except Exception:
+            self.write_error_json("无效请求体")
+            return
+
+        text = str(body.get("text", "")).strip()
+        task = str(body.get("task", "")).strip()
+        custom_instructions = str(body.get("custom_instructions", "")).strip()
+        passthrough_if_empty = bool(body.get("passthrough_if_empty", True))
+        return_tokenized = bool(body.get("return_tokenized", False))
+
+        if not text:
+            self.write_error_json("缺少 text")
+            return
+        if not task:
+            self.write_error_json("缺少 task")
+            return
+
+        cfg = load_config()
+        api_url = str(body.get("external_api_url", "")).strip() or cfg.get("api_url", "http://localhost:11434")
+        model = str(body.get("external_model", "")).strip() or cfg.get("model", "qwen3.5:35b")
+        system_prompt = str(body.get("external_system_prompt", "")).strip()
+
+        few_shot = fb_module.build_few_shot_section(DATA_DIR)
+        fp_set = fb_module.get_false_positive_set(DATA_DIR)
+
+        entities = detector.detect_entities(
+            text,
+            custom_instructions,
+            model=cfg.get("model", "qwen3.5:35b"),
+            ollama_url=cfg.get("api_url", "http://localhost:11434"),
+            few_shot_section=few_shot,
+            false_positive_set=fp_set if fp_set else None,
+            dual_model=cfg.get("dual_model", False),
+            model_2=cfg.get("model_2", "").strip(),
+        )
+
+        mapping = {e["original"]: e["replacement"] for e in entities}
+        tokenized_text = doc_handler.tokenize_text_with_mapping(text, mapping)
+
+        # 无敏感项时可直接透传原文，避免不必要失败
+        if not mapping and passthrough_if_empty:
+            tokenized_text = text
+
+        ai_output = detector.call_openai_compatible(
+            task_prompt=task,
+            text=tokenized_text,
+            model=model,
+            api_url=api_url,
+            system_prompt=system_prompt,
+        )
+
+        reverse_mapping = {v: k for k, v in mapping.items()}
+        restored_output = doc_handler.restore_text_with_mapping(ai_output, reverse_mapping)
+
+        resp = {
+            "result": restored_output,
+            "entity_count": len(entities),
+            "mapping_count": len(mapping),
+            "used_model": model,
+            "used_api_url": api_url,
+        }
+        if return_tokenized:
+            resp["tokenized_text"] = tokenized_text
+            resp["tokenized_result"] = ai_output
+        self.write_json(resp)
 
 
 class DesensitizeHandler(BaseHandler):
@@ -815,6 +892,7 @@ def make_app():
     return tornado.web.Application([
         (r"/",                         MainHandler),
         (r"/api/settings",             SettingsHandler),
+        (r"/api/secure_llm",           SecureLlmHandler),
         (r"/api/desensitize",          DesensitizeHandler),
         (r"/api/restore",              RestoreHandler),
         (r"/api/restore_from_job",     RestoreFromJobHandler),
