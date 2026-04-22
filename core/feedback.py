@@ -57,10 +57,17 @@ def save_feedback(data_dir: Path,
     """
     records = _load(data_dir)
     fid = str(uuid.uuid4())[:8]
+    doc_snippet = ""
+    for sample in reversed(_load_auto_samples(data_dir)):
+        if sample.get("job_id") == job_id:
+            doc_snippet = str(sample.get("snippet", "")).strip()
+            break
+
     record = {
         "feedback_id": fid,
         "job_id": job_id,
         "timestamp": datetime.now().isoformat(timespec="seconds"),
+        "doc_snippet": doc_snippet,
         "missed": missed,
         "false_positive": false_positive,
     }

@@ -425,6 +425,7 @@
 <!-- ══ 导航 Tab ══════════════════════════════════════════════════════════════ -->
 <nav>
   <button class="tab-btn active" onclick="switchTab('tab-desensitize', this)">📄 文档脱敏</button>
+  <button class="tab-btn" onclick="switchTab('tab-secure-llm', this); loadSecureLlmDefaults()">🔗 安全 AI</button>
   <button class="tab-btn" onclick="switchTab('tab-restore', this)">🔄 脱敏还原</button>
   <button class="tab-btn" data-tab="tab-history" onclick="switchTab('tab-history', this); loadHistory()">🕒 历史记录</button>
   <button class="tab-btn" onclick="switchTab('tab-settings', this); loadSystemStatus()">📋 使用说明</button>
@@ -476,6 +477,71 @@
     <div id="dequeue-list"></div>
   </div>
 
+</div>
+
+<!-- ══ 安全 AI（本地脱敏 → 外部模型 → 自动还原）══════════════════════════════ -->
+<div id="tab-secure-llm" class="tab-panel">
+
+  <div class="card">
+    <div class="card-title"><span class="icon">🔗</span>连贯处理：本地脱敏后调用外部 AI</div>
+    <div style="font-size:13px;color:var(--gray);margin-bottom:16px;line-height:1.7">
+      系统会先用<strong>配置中的本地模型</strong>识别敏感信息并替换，再把脱敏后的文本发给<strong>下方指定的外部接口</strong>完成你的任务，最后把结果中的占位符还原为原文。
+      适合：把合同片段交给云端/其他 OpenAI 兼容服务总结、翻译、审阅，同时尽量不把真实 PII 发出去。
+    </div>
+
+    <label for="secure-llm-text">待处理文本（可粘贴合同片段）</label>
+    <textarea id="secure-llm-text" rows="8" placeholder="粘贴需要处理的原文..."></textarea>
+
+    <div style="margin-top:14px;">
+      <label for="secure-llm-task">任务说明（发给外部 AI）</label>
+      <textarea id="secure-llm-task" rows="4" placeholder="例如：请用要点列表总结违约责任条款；或：将下文翻译成英文。"></textarea>
+    </div>
+
+    <div style="margin-top:14px;">
+      <label for="secure-llm-custom">自定义脱敏指令（可选，与「文档脱敏」页相同，影响本地识别）</label>
+      <textarea id="secure-llm-custom" rows="2" placeholder="一般留空即可；有特殊规则时填写。"></textarea>
+    </div>
+
+    <div class="divider"></div>
+    <div style="font-size:13px;font-weight:600;margin-bottom:10px;color:var(--text)">外部 AI（OpenAI 兼容 /v1/chat/completions）</div>
+    <div class="upload-row">
+      <div>
+        <label for="secure-llm-api-url">API 地址（留空则用系统配置中的 api_url）</label>
+        <textarea id="secure-llm-api-url" rows="2" placeholder="例如：https://api.openai.com 或 http://10.x.x.x:1234"></textarea>
+      </div>
+      <div>
+        <label for="secure-llm-model">模型名（留空则用系统配置中的 model）</label>
+        <textarea id="secure-llm-model" rows="2" placeholder="例如：gpt-4o-mini"></textarea>
+      </div>
+    </div>
+    <div style="margin-top:12px;">
+      <label for="secure-llm-system">外部系统提示词（可选）</label>
+      <textarea id="secure-llm-system" rows="2" placeholder="留空则使用默认助手提示。"></textarea>
+    </div>
+
+    <div style="margin-top:14px;display:flex;flex-wrap:wrap;gap:16px;align-items:center;font-size:13px;">
+      <label style="display:flex;align-items:center;gap:8px;margin:0;cursor:pointer;font-weight:400;">
+        <input type="checkbox" id="secure-llm-return-tokenized" style="width:auto;">
+        在结果中显示脱敏后的中间文本（调试用）
+      </label>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-primary" id="btn-secure-llm" onclick="submitSecureLlm()">🚀 开始处理</button>
+      <button class="btn btn-secondary" type="button" onclick="clearSecureLlmForm()">清空</button>
+    </div>
+    <div id="secure-llm-error"></div>
+
+    <div id="secure-llm-result-wrap" style="display:none;margin-top:18px;">
+      <div class="card-title" style="margin-bottom:10px;"><span class="icon">✅</span>处理结果</div>
+      <div id="secure-llm-meta" style="font-size:12px;color:var(--gray);margin-bottom:8px;"></div>
+      <textarea id="secure-llm-result" rows="12" readonly style="background:var(--gray-lt);"></textarea>
+      <div id="secure-llm-tokenized-wrap" style="display:none;margin-top:14px;">
+        <label style="font-size:13px;">脱敏后发给外部的文本 / 模型原始返回</label>
+        <textarea id="secure-llm-tokenized" rows="6" readonly style="background:#fffbeb;font-size:12px;"></textarea>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- ══ 还原 Tab ══════════════════════════════════════════════════════════════ -->
@@ -575,6 +641,16 @@
         <li>点击"开始脱敏"，文件进入处理队列</li>
         <li>队列中可继续添加新文件，多个文件依次处理</li>
         <li>处理完成后下载脱敏文档和映射表</li>
+      </ul>
+    </div>
+
+    <div class="guide-section">
+      <h3>🔗 安全 AI（连贯处理）</h3>
+      <ul>
+        <li>打开「安全 AI」标签页，粘贴文本并填写任务说明</li>
+        <li>本地模型（见系统状态中的配置）先识别并替换敏感信息</li>
+        <li>再将脱敏文本发送到你在页面中填写的外部 OpenAI 兼容接口完成总结、翻译等</li>
+        <li>返回内容会自动把占位符还原为原文；可选勾选查看中间脱敏文本</li>
       </ul>
     </div>
 
@@ -746,6 +822,120 @@ function switchTab(panelId, btn) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   document.getElementById(panelId).classList.add('active');
   btn.classList.add('active');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 安全 AI（/api/secure_llm）
+// ═══════════════════════════════════════════════════════════════════════════
+async function loadSecureLlmDefaults() {
+  document.getElementById('secure-llm-error').innerHTML = '';
+  try {
+    const resp = await fetch('/api/settings');
+    const data = await resp.json();
+    const apiEl = document.getElementById('secure-llm-api-url');
+    const modelEl = document.getElementById('secure-llm-model');
+    if (apiEl && !apiEl.value.trim() && data.api_url) {
+      apiEl.placeholder = '留空则使用：' + data.api_url;
+    }
+    if (modelEl && !modelEl.value.trim()) {
+      modelEl.placeholder = '当前系统 model：' + (data.model || '');
+    }
+  } catch (e) {}
+}
+
+function clearSecureLlmForm() {
+  document.getElementById('secure-llm-text').value = '';
+  document.getElementById('secure-llm-task').value = '';
+  document.getElementById('secure-llm-custom').value = '';
+  document.getElementById('secure-llm-api-url').value = '';
+  document.getElementById('secure-llm-model').value = '';
+  document.getElementById('secure-llm-system').value = '';
+  document.getElementById('secure-llm-return-tokenized').checked = false;
+  document.getElementById('secure-llm-error').innerHTML = '';
+  document.getElementById('secure-llm-result-wrap').style.display = 'none';
+}
+
+async function submitSecureLlm() {
+  const text = document.getElementById('secure-llm-text').value.trim();
+  const task = document.getElementById('secure-llm-task').value.trim();
+  const custom = document.getElementById('secure-llm-custom').value.trim();
+  const extUrl = document.getElementById('secure-llm-api-url').value.trim();
+  const extModel = document.getElementById('secure-llm-model').value.trim();
+  const extSys = document.getElementById('secure-llm-system').value.trim();
+  const returnTok = document.getElementById('secure-llm-return-tokenized').checked;
+
+  document.getElementById('secure-llm-error').innerHTML = '';
+  if (!text) {
+    document.getElementById('secure-llm-error').innerHTML = errorHTML('请填写待处理文本');
+    return;
+  }
+  if (!task) {
+    document.getElementById('secure-llm-error').innerHTML = errorHTML('请填写任务说明');
+    return;
+  }
+
+  const btn = document.getElementById('btn-secure-llm');
+  btn.disabled = true;
+  btn.textContent = '处理中（本地识别 + 外部调用）...';
+
+  const body = {
+    text,
+    task,
+    custom_instructions: custom,
+    passthrough_if_empty: true,
+    return_tokenized: returnTok,
+  };
+  if (extUrl) body.external_api_url = extUrl;
+  if (extModel) body.external_model = extModel;
+  if (extSys) body.external_system_prompt = extSys;
+
+  let resp, data;
+  try {
+    resp = await fetch('/api/secure_llm', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify(body),
+    });
+  } catch (e) {
+    document.getElementById('secure-llm-error').innerHTML = errorHTML('网络错误，无法连接到服务');
+    btn.disabled = false;
+    btn.textContent = '🚀 开始处理';
+    return;
+  }
+
+  try {
+    data = await resp.json();
+  } catch (e) {
+    document.getElementById('secure-llm-error').innerHTML = errorHTML(`服务器返回了非预期的响应（HTTP ${resp.status}）`);
+    btn.disabled = false;
+    btn.textContent = '🚀 开始处理';
+    return;
+  }
+
+  if (!resp.ok) {
+    document.getElementById('secure-llm-error').innerHTML = errorHTML(data.error || '请求失败');
+    btn.disabled = false;
+    btn.textContent = '🚀 开始处理';
+    return;
+  }
+
+  document.getElementById('secure-llm-result').value = data.result || '';
+  document.getElementById('secure-llm-meta').textContent =
+    `识别实体 ${data.entity_count ?? 0} 个 · 映射 ${data.mapping_count ?? 0} 项 · 外部模型 ${data.used_model || '—'} · ${data.used_api_url || '—'}`;
+
+  const tw = document.getElementById('secure-llm-tokenized-wrap');
+  const tt = document.getElementById('secure-llm-tokenized');
+  if (returnTok && (data.tokenized_text != null || data.tokenized_result != null)) {
+    tw.style.display = 'block';
+    tt.value = '【脱敏后文本】\n' + (data.tokenized_text || '') + '\n\n【模型返回（未还原）】\n' + (data.tokenized_result || '');
+  } else {
+    tw.style.display = 'none';
+    tt.value = '';
+  }
+
+  document.getElementById('secure-llm-result-wrap').style.display = 'block';
+  btn.disabled = false;
+  btn.textContent = '🚀 开始处理';
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
