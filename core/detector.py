@@ -332,40 +332,45 @@ def check_ollama(ollama_url: str, model: str) -> dict:
 
 
 def call_openai_compatible(task_prompt: str, text: str,
-                           model: str = "qwen3.5:35b",
-                           api_url: str = "http://localhost:11434",
-                           system_prompt: str = "") -> str:
-    """
+                           model: str = “qwen3.5:35b”,
+                           api_url: str = “http://localhost:11434”,
+                           system_prompt: str = “”,
+                           api_key: str = “”) -> str:
+    “””
     调用 OpenAI 兼容 chat completions 接口处理文本。
-    适用于“先本地脱敏，再发外部 AI”的下游任务。
-    """
-    endpoint = api_url.rstrip("/") + "/v1/chat/completions"
-    sys_prompt = system_prompt.strip() if system_prompt else "你是一个专业的文档处理助手，请严格按用户要求处理文本。"
+    适用于”先本地脱敏，再发外部 AI”的下游任务。
+    “””
+    endpoint = api_url.rstrip(“/”) + “/v1/chat/completions”
+    sys_prompt = system_prompt.strip() if system_prompt else “你是一个专业的文档处理助手，请严格按用户要求处理文本。”
     payload = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": sys_prompt},
+        “model”: model,
+        “messages”: [
+            {“role”: “system”, “content”: sys_prompt},
             {
-                "role": "user",
-                "content": f"任务要求：\n{task_prompt.strip()}\n\n待处理文本：\n{text}"
+                “role”: “user”,
+                “content”: f”任务要求：\n{task_prompt.strip()}\n\n待处理文本：\n{text}”
             }
         ],
-        "stream": False,
-        "temperature": 0.2,
-        "max_tokens": 8192,
+        “stream”: False,
+        “temperature”: 0.2,
+        “max_tokens”: 8192,
     }
+
+    headers = {“Content-Type”: “application/json”}
+    if api_key and api_key.strip():
+        headers[“Authorization”] = f”Bearer {api_key.strip()}”
 
     try:
         response = requests.post(
             endpoint,
-            headers={"Content-Type": "application/json"},
+            headers=headers,
             json=payload,
             timeout=300
         )
     except requests.exceptions.Timeout:
-        raise RuntimeError("外部 AI 服务响应超时（超过5分钟）")
+        raise RuntimeError(“外部 AI 服务响应超时（超过5分钟）”)
     except requests.exceptions.ConnectionError:
-        raise RuntimeError(f"无法连接到外部 AI 服务（{api_url}）")
+        raise RuntimeError(f”无法连接到外部 AI 服务（{api_url}）”)
 
     if response.status_code == 404:
         raise RuntimeError(f"外部 AI 模型 {model} 未找到")

@@ -394,6 +394,84 @@
     display: grid; grid-template-columns: 1fr 28px;
     gap: 6px; font-size: 11px; color: var(--gray); margin-bottom: 4px;
   }
+
+  /* ── 输入模式切换 ── */
+  .imode-tabs { display: flex; gap: 0; margin-bottom: 16px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .imode-btn {
+    flex: 1; padding: 9px 0; border: none; background: white;
+    font-size: 13px; font-weight: 500; color: var(--gray); cursor: pointer; transition: all .15s;
+  }
+  .imode-btn.active { background: var(--blue); color: white; }
+  .imode-btn:not(.active):hover { background: var(--gray-lt); }
+
+  /* ── 处理路径按钮 ── */
+  .path-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .path-btn {
+    border: 2px solid var(--border); border-radius: 10px; padding: 14px 16px;
+    background: white; cursor: pointer; text-align: left; transition: all .15s;
+    display: flex; flex-direction: column; gap: 5px;
+  }
+  .path-btn:hover { border-color: var(--blue); background: var(--blue-lt); }
+  .path-btn.active { border-color: var(--blue); background: var(--blue-lt); }
+  .path-btn:disabled { opacity: .45; cursor: not-allowed; }
+  .path-btn:disabled:hover { border-color: var(--border); background: white; }
+  .path-btn-title { font-size: 14px; font-weight: 600; color: var(--text); }
+  .path-btn.active .path-btn-title { color: var(--blue); }
+  .path-btn-desc { font-size: 12px; color: var(--gray); line-height: 1.5; }
+
+  /* ── AI 提供商格格 ── */
+  .ai-grid { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
+  .ai-card {
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+    width: 72px; cursor: pointer; position: relative;
+    padding: 10px 6px; border-radius: 10px; border: 2px solid transparent;
+    background: var(--gray-lt); transition: all .15s;
+  }
+  .ai-card:hover { border-color: var(--blue); background: var(--blue-lt); }
+  .ai-card.selected { border-color: var(--blue); background: var(--blue-lt); }
+  .ai-card.add-card { border: 2px dashed var(--border); color: var(--gray); }
+  .ai-card.add-card:hover { border-color: var(--blue); color: var(--blue); background: var(--blue-lt); }
+  .ai-logo {
+    width: 40px; height: 40px; border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 700; color: white; flex-shrink: 0;
+  }
+  .ai-card-name { font-size: 11px; color: var(--text); text-align: center; font-weight: 500; line-height: 1.3; word-break: break-all; }
+  .ai-card-key { font-size: 10px; color: var(--gray); }
+  .ai-card-actions {
+    display: none; position: absolute; top: 2px; right: 2px;
+    gap: 2px;
+  }
+  .ai-card:hover .ai-card-actions { display: flex; }
+  .ai-action-btn {
+    width: 18px; height: 18px; border: none; border-radius: 4px; cursor: pointer;
+    font-size: 10px; padding: 0; display: flex; align-items: center; justify-content: center;
+  }
+  .ai-action-edit { background: #dbeafe; color: #1d4ed8; }
+  .ai-action-del  { background: #fee2e2; color: #dc2626; }
+
+  /* ── 折叠区 ── */
+  details > summary {
+    font-size: 13px; color: var(--gray); cursor: pointer; user-select: none;
+    padding: 6px 0; list-style: none; display: flex; align-items: center; gap: 6px;
+  }
+  details > summary::before { content: '▶'; font-size: 10px; transition: transform .2s; }
+  details[open] > summary::before { transform: rotate(90deg); }
+  details > summary:hover { color: var(--blue); }
+
+  /* ── AI 配置弹窗预设格格 ── */
+  .preset-grid { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 14px; }
+  .preset-btn {
+    display: flex; align-items: center; gap: 7px;
+    padding: 6px 12px; border: 1px solid var(--border); border-radius: 20px;
+    background: white; cursor: pointer; font-size: 12px; font-weight: 500;
+    color: var(--text); transition: all .15s;
+  }
+  .preset-btn:hover, .preset-btn.active { border-color: var(--blue); background: var(--blue-lt); color: var(--blue); }
+  .preset-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+
+  /* ── 文本结果区 ── */
+  .result-card { background: #f0fdf4; border: 1px solid #86efac; }
 </style>
 </head>
 <body>
@@ -425,7 +503,6 @@
 <!-- ══ 导航 Tab ══════════════════════════════════════════════════════════════ -->
 <nav>
   <button class="tab-btn active" onclick="switchTab('tab-desensitize', this)">📄 文档脱敏</button>
-  <button class="tab-btn" onclick="switchTab('tab-secure-llm', this); loadSecureLlmDefaults()">🔗 安全 AI</button>
   <button class="tab-btn" onclick="switchTab('tab-restore', this)">🔄 脱敏还原</button>
   <button class="tab-btn" data-tab="tab-history" onclick="switchTab('tab-history', this); loadHistory()">🕒 历史记录</button>
   <button class="tab-btn" onclick="switchTab('tab-settings', this); loadSystemStatus()">📋 使用说明</button>
@@ -433,39 +510,111 @@
 
 <main>
 
-<!-- ══ 脱敏 Tab ══════════════════════════════════════════════════════════════ -->
+<!-- ══ 文档脱敏 Tab（合并文档脱敏 + 安全 AI）═══════════════════════════════════ -->
 <div id="tab-desensitize" class="tab-panel active">
 
-  <!-- 上传卡片 -->
+  <!-- 输入卡片 -->
   <div class="card">
-    <div class="card-title"><span class="icon">📤</span>上传需要脱敏的合同文件</div>
-    <div class="drop-zone" id="dz-main"
-         onclick="document.getElementById('file-main').click()"
-         ondragover="dzDragOver(event,'dz-main')"
-         ondragleave="dzDragLeave('dz-main')"
-         ondrop="dzDrop(event,'dz-main','file-main',onMainFileSelect)">
-      <div class="dz-icon">📁</div>
-      <div class="dz-label">拖放文件到此处，或点击选择</div>
-      <div class="dz-hint">支持格式：.docx &nbsp;·&nbsp; .xlsx / .xls &nbsp;·&nbsp; .csv &nbsp;·&nbsp; .pdf（可选中文字）</div>
-      <input type="file" id="file-main" accept=".docx,.xlsx,.xls,.csv,.pdf"
-             onchange="onMainFileSelect(this.files[0])">
+    <div class="card-title"><span class="icon">📄</span>合同内容</div>
+
+    <!-- 输入模式切换 -->
+    <div class="imode-tabs">
+      <button class="imode-btn active" id="imode-text-btn" onclick="switchInputMode('text', this)">✍️ 输入文本</button>
+      <button class="imode-btn" id="imode-file-btn" onclick="switchInputMode('file', this)">📁 上传文件</button>
     </div>
-    <div style="margin-top:18px;">
-      <label for="custom-instructions">自定义脱敏指令（可选）</label>
-      <textarea id="custom-instructions" rows="3"
+
+    <!-- 文本模式 -->
+    <div id="input-text-mode">
+      <textarea id="main-text" rows="9" placeholder="粘贴合同文本..."></textarea>
+    </div>
+
+    <!-- 文件模式 -->
+    <div id="input-file-mode" style="display:none">
+      <div class="drop-zone" id="dz-main"
+           onclick="document.getElementById('file-main').click()"
+           ondragover="dzDragOver(event,'dz-main')"
+           ondragleave="dzDragLeave('dz-main')"
+           ondrop="dzDrop(event,'dz-main','file-main',onMainFileSelect)">
+        <div class="dz-icon">📁</div>
+        <div class="dz-label">拖放文件到此处，或点击选择</div>
+        <div class="dz-hint">支持格式：.docx &nbsp;·&nbsp; .xlsx / .xls &nbsp;·&nbsp; .csv &nbsp;·&nbsp; .pdf（可选中文字）</div>
+        <input type="file" id="file-main" accept=".docx,.xlsx,.xls,.csv,.pdf"
+               onchange="onMainFileSelect(this.files[0])">
+      </div>
+    </div>
+
+    <!-- 自定义指令（折叠） -->
+    <details style="margin-top:14px;">
+      <summary>自定义脱敏指令（可选）</summary>
+      <textarea id="custom-instructions" rows="3" style="margin-top:8px;"
         placeholder="除非有特别需求，一般情况无需填写，将自动套用默认规则。示例：将所有金额统一替换为100万元；额外隐藏日期信息。"></textarea>
       <div style="font-size:12px;color:var(--gray);margin-top:4px;">支持自然语言，优先级高于默认规则</div>
-    </div>
-    <div class="btn-row">
-      <button class="btn btn-primary" id="btn-desensitize" onclick="startDesensitize()" disabled>
-        🚀 开始脱敏
-      </button>
-      <button class="btn btn-secondary" onclick="resetDesensitizeUpload()">重置</button>
-    </div>
-    <div id="desensitize-error"></div>
+    </details>
   </div>
 
-  <!-- 队列面板（有任务时显示）-->
+  <!-- 处理路径选择 -->
+  <div class="card">
+    <div class="card-title"><span class="icon">⚡</span>选择处理方式</div>
+    <div class="path-btns">
+      <button class="path-btn active" id="path-btn-deonly" onclick="selectPath('deonly', this)">
+        <div class="path-btn-title">🔒 仅脱敏</div>
+        <div class="path-btn-desc">调用本地模型识别敏感信息，返回脱敏后文本或文档，不发往外部服务。</div>
+      </button>
+      <button class="path-btn" id="path-btn-ai" onclick="selectPath('external', this)">
+        <div class="path-btn-title">🤖 发送外部 AI</div>
+        <div class="path-btn-desc">先本地脱敏，再把内容发给云端 AI 完成总结、翻译、审阅等任务。仅支持文本输入。</div>
+      </button>
+    </div>
+    <div id="file-ai-note" style="display:none;margin-top:10px;font-size:12px;color:var(--warn);">
+      ⚠️ 文件上传模式仅支持「仅脱敏」路径。如需发送外部 AI，请切换至文本输入模式。
+    </div>
+  </div>
+
+  <!-- 外部 AI 配置区（路径 2） -->
+  <div id="path-external-panel" class="card" style="display:none">
+    <div class="card-title"><span class="icon">🤖</span>外部 AI 配置</div>
+
+    <div style="font-size:13px;color:var(--gray);margin-bottom:12px;">
+      点击已配置的 AI 选择使用，或点击 <b>＋</b> 添加新的 AI 提供商。
+    </div>
+    <div class="ai-grid" id="ai-provider-grid"></div>
+
+    <div style="margin-top:4px;">
+      <label for="ai-task">任务说明（发给外部 AI）</label>
+      <textarea id="ai-task" rows="4"
+        placeholder="例如：请用要点列表总结违约责任条款；或：将下文翻译成英文。"></textarea>
+    </div>
+
+    <details style="margin-top:12px;">
+      <summary>调试选项</summary>
+      <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-weight:400;cursor:pointer;">
+        <input type="checkbox" id="ai-return-tokenized" style="width:auto;">
+        在结果中显示脱敏后的中间文本
+      </label>
+    </details>
+  </div>
+
+  <!-- 操作按钮 -->
+  <div style="margin-bottom:18px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+    <button class="btn btn-primary" id="btn-desensitize" onclick="startMainAction()" disabled>
+      🚀 开始处理
+    </button>
+    <button class="btn btn-secondary" onclick="resetMainInput()">重置</button>
+    <div id="desensitize-error" style="width:100%;"></div>
+  </div>
+
+  <!-- 文本结果区（文本模式返回） -->
+  <div id="text-result-panel" class="card result-card" style="display:none">
+    <div class="card-title" style="margin-bottom:10px;"><span class="icon">✅</span>处理结果</div>
+    <div id="text-result-meta" style="font-size:12px;color:var(--gray);margin-bottom:8px;"></div>
+    <textarea id="text-result-content" rows="12" readonly style="background:white;"></textarea>
+    <div id="text-result-tokenized-wrap" style="display:none;margin-top:14px;">
+      <label style="font-size:13px;">脱敏后文本 / 模型原始返回（调试）</label>
+      <textarea id="text-result-tokenized" rows="6" readonly style="background:#fffbeb;font-size:12px;"></textarea>
+    </div>
+  </div>
+
+  <!-- 文件处理队列（文件模式） -->
   <div id="dequeue-panel" class="queue-card" style="display:none">
     <div class="queue-card-header">
       <div class="queue-card-title">
@@ -477,71 +626,6 @@
     <div id="dequeue-list"></div>
   </div>
 
-</div>
-
-<!-- ══ 安全 AI（本地脱敏 → 外部模型 → 自动还原）══════════════════════════════ -->
-<div id="tab-secure-llm" class="tab-panel">
-
-  <div class="card">
-    <div class="card-title"><span class="icon">🔗</span>连贯处理：本地脱敏后调用外部 AI</div>
-    <div style="font-size:13px;color:var(--gray);margin-bottom:16px;line-height:1.7">
-      系统会先用<strong>配置中的本地模型</strong>识别敏感信息并替换，再把脱敏后的文本发给<strong>下方指定的外部接口</strong>完成你的任务，最后把结果中的占位符还原为原文。
-      适合：把合同片段交给云端/其他 OpenAI 兼容服务总结、翻译、审阅，同时尽量不把真实 PII 发出去。
-    </div>
-
-    <label for="secure-llm-text">待处理文本（可粘贴合同片段）</label>
-    <textarea id="secure-llm-text" rows="8" placeholder="粘贴需要处理的原文..."></textarea>
-
-    <div style="margin-top:14px;">
-      <label for="secure-llm-task">任务说明（发给外部 AI）</label>
-      <textarea id="secure-llm-task" rows="4" placeholder="例如：请用要点列表总结违约责任条款；或：将下文翻译成英文。"></textarea>
-    </div>
-
-    <div style="margin-top:14px;">
-      <label for="secure-llm-custom">自定义脱敏指令（可选，与「文档脱敏」页相同，影响本地识别）</label>
-      <textarea id="secure-llm-custom" rows="2" placeholder="一般留空即可；有特殊规则时填写。"></textarea>
-    </div>
-
-    <div class="divider"></div>
-    <div style="font-size:13px;font-weight:600;margin-bottom:10px;color:var(--text)">外部 AI（OpenAI 兼容 /v1/chat/completions）</div>
-    <div class="upload-row">
-      <div>
-        <label for="secure-llm-api-url">API 地址（留空则用系统配置中的 api_url）</label>
-        <textarea id="secure-llm-api-url" rows="2" placeholder="例如：https://api.openai.com 或 http://10.x.x.x:1234"></textarea>
-      </div>
-      <div>
-        <label for="secure-llm-model">模型名（留空则用系统配置中的 model）</label>
-        <textarea id="secure-llm-model" rows="2" placeholder="例如：gpt-4o-mini"></textarea>
-      </div>
-    </div>
-    <div style="margin-top:12px;">
-      <label for="secure-llm-system">外部系统提示词（可选）</label>
-      <textarea id="secure-llm-system" rows="2" placeholder="留空则使用默认助手提示。"></textarea>
-    </div>
-
-    <div style="margin-top:14px;display:flex;flex-wrap:wrap;gap:16px;align-items:center;font-size:13px;">
-      <label style="display:flex;align-items:center;gap:8px;margin:0;cursor:pointer;font-weight:400;">
-        <input type="checkbox" id="secure-llm-return-tokenized" style="width:auto;">
-        在结果中显示脱敏后的中间文本（调试用）
-      </label>
-    </div>
-
-    <div class="btn-row">
-      <button class="btn btn-primary" id="btn-secure-llm" onclick="submitSecureLlm()">🚀 开始处理</button>
-      <button class="btn btn-secondary" type="button" onclick="clearSecureLlmForm()">清空</button>
-    </div>
-    <div id="secure-llm-error"></div>
-
-    <div id="secure-llm-result-wrap" style="display:none;margin-top:18px;">
-      <div class="card-title" style="margin-bottom:10px;"><span class="icon">✅</span>处理结果</div>
-      <div id="secure-llm-meta" style="font-size:12px;color:var(--gray);margin-bottom:8px;"></div>
-      <textarea id="secure-llm-result" rows="12" readonly style="background:var(--gray-lt);"></textarea>
-      <div id="secure-llm-tokenized-wrap" style="display:none;margin-top:14px;">
-        <label style="font-size:13px;">脱敏后发给外部的文本 / 模型原始返回</label>
-        <textarea id="secure-llm-tokenized" rows="6" readonly style="background:#fffbeb;font-size:12px;"></textarea>
-      </div>
-    </div>
-  </div>
 </div>
 
 <!-- ══ 还原 Tab ══════════════════════════════════════════════════════════════ -->
@@ -712,6 +796,49 @@
 
 </main>
 
+<!-- ══ AI 提供商配置弹窗 ══════════════════════════════════════════════════════ -->
+<div class="fb-overlay" id="ai-config-overlay">
+  <div class="fb-modal" style="width:min(520px,96vw)">
+    <div class="fb-modal-header">
+      <h3 id="ai-config-title">添加 AI 提供商</h3>
+      <button class="qi-ctrl-btn cancel" onclick="closeAiConfigModal()" style="width:28px;height:28px;font-size:16px">✕</button>
+    </div>
+    <div class="fb-modal-body">
+      <div style="font-size:13px;font-weight:600;margin-bottom:8px;">选择预设（可选）</div>
+      <div class="preset-grid" id="aic-preset-grid"></div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:10px;">
+        <div>
+          <label>名称</label>
+          <input type="text" id="aic-name" style="width:100%;height:34px;border:1px solid var(--border);border-radius:6px;padding:0 10px;font-size:13px;" placeholder="例如：我的 OpenAI">
+        </div>
+        <div>
+          <label>模型名</label>
+          <input type="text" id="aic-model" style="width:100%;height:34px;border:1px solid var(--border);border-radius:6px;padding:0 10px;font-size:13px;" placeholder="例如：gpt-4o-mini">
+        </div>
+      </div>
+      <div style="margin-bottom:10px;">
+        <label>API 地址</label>
+        <input type="text" id="aic-url" style="width:100%;height:34px;border:1px solid var(--border);border-radius:6px;padding:0 10px;font-size:13px;" placeholder="例如：https://api.openai.com">
+      </div>
+      <div style="margin-bottom:10px;">
+        <label>API Key</label>
+        <input type="password" id="aic-key" style="width:100%;height:34px;border:1px solid var(--border);border-radius:6px;padding:0 10px;font-size:13px;" placeholder="sk-...（存储在本地浏览器，不上传服务器）">
+        <div style="font-size:11px;color:var(--gray);margin-top:3px;">API Key 仅保存在本地浏览器 localStorage，每次请求由前端传给后端，不存储在服务器。</div>
+      </div>
+      <details>
+        <summary>系统提示词（可选）</summary>
+        <textarea id="aic-system" rows="3" style="margin-top:8px;" placeholder="留空则使用默认助手提示。"></textarea>
+      </details>
+      <div id="aic-error" style="color:var(--error);font-size:13px;margin-top:8px;"></div>
+    </div>
+    <div class="fb-modal-footer">
+      <button class="btn btn-secondary btn-sm" onclick="closeAiConfigModal()">取消</button>
+      <button class="btn btn-primary btn-sm" onclick="saveAiConfig()">保存</button>
+    </div>
+  </div>
+</div>
+
 <!-- ══ 纠错弹窗 ═════════════════════════════════════════════════════════════ -->
 <div class="fb-overlay" id="fb-overlay">
   <div class="fb-modal">
@@ -829,6 +956,10 @@ function switchUser() {
     document.getElementById('login-overlay').classList.remove('hidden');
     setTimeout(() => document.getElementById('login-username').focus(), 100);
   }
+  // 初始化 AI 提供商格格
+  renderAiGrid();
+  // 文本输入时更新按钮状态
+  document.getElementById('main-text').addEventListener('input', updateMainActionButton);
 })();
 
 function authHeaders() { return { 'X-Username': encodeURIComponent(currentUser) }; }
@@ -844,117 +975,313 @@ function switchTab(panelId, btn) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 安全 AI（/api/secure_llm）
+// 输入模式 & 路径选择
 // ═══════════════════════════════════════════════════════════════════════════
-async function loadSecureLlmDefaults() {
-  document.getElementById('secure-llm-error').innerHTML = '';
-  try {
-    const resp = await fetch('/api/settings');
-    const data = await resp.json();
-    const apiEl = document.getElementById('secure-llm-api-url');
-    const modelEl = document.getElementById('secure-llm-model');
-    if (apiEl && !apiEl.value.trim() && data.api_url) {
-      apiEl.placeholder = '留空则使用：' + data.api_url;
-    }
-    if (modelEl && !modelEl.value.trim()) {
-      modelEl.placeholder = '当前系统 model：' + (data.model || '');
-    }
-  } catch (e) {}
+let _inputMode = 'text';    // 'text' | 'file'
+let _activePath = 'deonly'; // 'deonly' | 'external'
+
+function switchInputMode(mode, btn) {
+  _inputMode = mode;
+  document.querySelectorAll('.imode-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('input-text-mode').style.display = mode === 'text' ? '' : 'none';
+  document.getElementById('input-file-mode').style.display = mode === 'file' ? '' : 'none';
+
+  const aiBtn = document.getElementById('path-btn-ai');
+  const fileNote = document.getElementById('file-ai-note');
+  if (mode === 'file') {
+    aiBtn.disabled = true;
+    if (_activePath === 'external') selectPath('deonly', document.getElementById('path-btn-deonly'));
+    fileNote.style.display = 'block';
+  } else {
+    aiBtn.disabled = false;
+    fileNote.style.display = 'none';
+  }
+  updateMainActionButton();
 }
 
-function clearSecureLlmForm() {
-  document.getElementById('secure-llm-text').value = '';
-  document.getElementById('secure-llm-task').value = '';
-  document.getElementById('secure-llm-custom').value = '';
-  document.getElementById('secure-llm-api-url').value = '';
-  document.getElementById('secure-llm-model').value = '';
-  document.getElementById('secure-llm-system').value = '';
-  document.getElementById('secure-llm-return-tokenized').checked = false;
-  document.getElementById('secure-llm-error').innerHTML = '';
-  document.getElementById('secure-llm-result-wrap').style.display = 'none';
+function selectPath(path, btn) {
+  _activePath = path;
+  document.querySelectorAll('.path-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('path-external-panel').style.display = path === 'external' ? '' : 'none';
+  updateMainActionButton();
 }
 
-async function submitSecureLlm() {
-  const text = document.getElementById('secure-llm-text').value.trim();
-  const task = document.getElementById('secure-llm-task').value.trim();
-  const custom = document.getElementById('secure-llm-custom').value.trim();
-  const extUrl = document.getElementById('secure-llm-api-url').value.trim();
-  const extModel = document.getElementById('secure-llm-model').value.trim();
-  const extSys = document.getElementById('secure-llm-system').value.trim();
-  const returnTok = document.getElementById('secure-llm-return-tokenized').checked;
+function updateMainActionButton() {
+  const btn = document.getElementById('btn-desensitize');
+  const hasText = (_inputMode === 'text') && document.getElementById('main-text').value.trim().length > 0;
+  const hasFile = (_inputMode === 'file') && !!mainFile;
+  const hasInput = hasText || hasFile;
+  const hasAiSelected = _activePath !== 'external' || !!_selectedAiId;
+  btn.disabled = !hasInput || !hasAiSelected;
 
-  document.getElementById('secure-llm-error').innerHTML = '';
+  const hasActive = jobQueue.some(j => j.status === 'queued' || j.status === 'processing');
+  btn.innerHTML = (_inputMode === 'file' && hasActive) ? '➕ 加入脱敏队列' : '🚀 开始处理';
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// AI 提供商管理（localStorage）
+// ═══════════════════════════════════════════════════════════════════════════
+const AI_PRESETS = [
+  { key: 'openai',   name: 'OpenAI',   api_url: 'https://api.openai.com',                             model: 'gpt-4o-mini',    color: '#10a37f', abbr: 'GPT' },
+  { key: 'deepseek', name: 'DeepSeek', api_url: 'https://api.deepseek.com',                           model: 'deepseek-chat',  color: '#4361ee', abbr: 'DS'  },
+  { key: 'zhipu',    name: '智谱 AI',  api_url: 'https://open.bigmodel.cn/api/paas/v4',               model: 'glm-4-flash',    color: '#7209b7', abbr: 'ZP'  },
+  { key: 'moonshot', name: 'Moonshot', api_url: 'https://api.moonshot.cn/v1',                         model: 'moonshot-v1-8k', color: '#f77f00', abbr: 'KM'  },
+  { key: 'bailian',  name: '阿里百炼', api_url: 'https://dashscope.aliyuncs.com/compatible-mode/v1',  model: 'qwen-plus',      color: '#ff6a00', abbr: 'Ali' },
+  { key: 'doubao',   name: '字节豆包', api_url: 'https://ark.cn-beijing.volces.com/api/v3',            model: 'doubao-pro-32k', color: '#1890ff', abbr: 'DB'  },
+  { key: 'custom',   name: '自定义',   api_url: '',                                                    model: '',               color: '#64748b', abbr: '+'   },
+];
+
+function loadAiConfigs() {
+  try { return JSON.parse(localStorage.getItem('ai_configs') || '[]'); }
+  catch { return []; }
+}
+function saveAiConfigs(configs) { localStorage.setItem('ai_configs', JSON.stringify(configs)); }
+function genId() { return 'ai_' + Math.random().toString(36).slice(2, 10); }
+
+let _selectedAiId = null;
+let _editingAiId  = null;
+
+function renderAiGrid() {
+  const configs = loadAiConfigs();
+  const grid = document.getElementById('ai-provider-grid');
+  if (!grid) return;
+
+  let html = configs.map(cfg => {
+    const preset = AI_PRESETS.find(p => p.key === cfg.preset) || { color: '#64748b', abbr: (cfg.name || '?').slice(0,3).toUpperCase() };
+    const isSel  = cfg.id === _selectedAiId;
+    const keyHint = cfg.api_key ? '●●●' + cfg.api_key.slice(-4) : '未配置';
+    return `<div class="ai-card${isSel ? ' selected' : ''}" onclick="selectAiProvider('${cfg.id}')">
+      <div class="ai-card-actions">
+        <button class="ai-action-btn ai-action-edit" onclick="openAiConfigModal('${cfg.id}');event.stopPropagation()">✎</button>
+        <button class="ai-action-btn ai-action-del"  onclick="deleteAiConfig('${cfg.id}');event.stopPropagation()">✕</button>
+      </div>
+      <div class="ai-logo" style="background:${escHtml(preset.color)}">${escHtml(preset.abbr)}</div>
+      <div class="ai-card-name">${escHtml(cfg.name)}</div>
+      <div class="ai-card-key">${escHtml(keyHint)}</div>
+    </div>`;
+  }).join('');
+
+  html += `<div class="ai-card add-card" onclick="openAiConfigModal(null)">
+    <div class="ai-logo" style="background:#e2e8f0;color:#64748b;font-size:22px;font-weight:300">＋</div>
+    <div class="ai-card-name" style="color:var(--gray)">添加</div>
+  </div>`;
+
+  grid.innerHTML = html;
+  updateMainActionButton();
+}
+
+function selectAiProvider(id) {
+  _selectedAiId = id;
+  renderAiGrid();
+  updateMainActionButton();
+}
+
+function deleteAiConfig(id) {
+  if (!confirm('确认删除这个 AI 配置？')) return;
+  const configs = loadAiConfigs().filter(c => c.id !== id);
+  saveAiConfigs(configs);
+  if (_selectedAiId === id) _selectedAiId = null;
+  renderAiGrid();
+}
+
+function openAiConfigModal(editId) {
+  _editingAiId = editId;
+  document.getElementById('ai-config-title').textContent = editId ? '编辑 AI 提供商' : '添加 AI 提供商';
+  document.getElementById('aic-error').textContent = '';
+
+  if (editId) {
+    const cfg = loadAiConfigs().find(c => c.id === editId);
+    if (!cfg) return;
+    document.getElementById('aic-name').value   = cfg.name || '';
+    document.getElementById('aic-url').value    = cfg.api_url || '';
+    document.getElementById('aic-model').value  = cfg.model || '';
+    document.getElementById('aic-key').value    = cfg.api_key || '';
+    document.getElementById('aic-system').value = cfg.system_prompt || '';
+    renderPresetGrid(cfg.preset || null);
+  } else {
+    ['aic-name','aic-url','aic-model','aic-key','aic-system'].forEach(id => { document.getElementById(id).value = ''; });
+    renderPresetGrid(null);
+  }
+  document.getElementById('ai-config-overlay').classList.add('open');
+}
+
+function closeAiConfigModal() {
+  document.getElementById('ai-config-overlay').classList.remove('open');
+}
+
+function renderPresetGrid(activeKey) {
+  document.getElementById('aic-preset-grid').innerHTML = AI_PRESETS.map(p =>
+    `<button class="preset-btn${p.key === activeKey ? ' active' : ''}" onclick="applyPreset('${p.key}',this)">
+      <span class="preset-dot" style="background:${p.color}"></span>${escHtml(p.name)}
+    </button>`
+  ).join('');
+}
+
+function applyPreset(key, btn) {
+  document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  const p = AI_PRESETS.find(x => x.key === key);
+  if (!p || key === 'custom') return;
+  if (!document.getElementById('aic-name').value)  document.getElementById('aic-name').value  = p.name;
+  if (!document.getElementById('aic-url').value)   document.getElementById('aic-url').value   = p.api_url;
+  if (!document.getElementById('aic-model').value) document.getElementById('aic-model').value = p.model;
+}
+
+function saveAiConfig() {
+  const name  = document.getElementById('aic-name').value.trim();
+  const url   = document.getElementById('aic-url').value.trim();
+  const model = document.getElementById('aic-model').value.trim();
+  const key   = document.getElementById('aic-key').value.trim();
+  const sys   = document.getElementById('aic-system').value.trim();
+  const errEl = document.getElementById('aic-error');
+
+  if (!name)  { errEl.textContent = '请填写名称'; return; }
+  if (!url)   { errEl.textContent = '请填写 API 地址'; return; }
+  if (!model) { errEl.textContent = '请填写模型名'; return; }
+  if (!key)   { errEl.textContent = '请填写 API Key'; return; }
+
+  const activeBtn = document.querySelector('#aic-preset-grid .preset-btn.active');
+  const preset = activeBtn
+    ? (AI_PRESETS.find(p => p.name === activeBtn.textContent.trim())?.key || 'custom')
+    : 'custom';
+
+  const configs = loadAiConfigs();
+  if (_editingAiId) {
+    const idx = configs.findIndex(c => c.id === _editingAiId);
+    if (idx >= 0) configs[idx] = { ...configs[idx], name, api_url: url, model, api_key: key, system_prompt: sys, preset };
+  } else {
+    configs.push({ id: genId(), name, api_url: url, model, api_key: key, system_prompt: sys, preset });
+  }
+  saveAiConfigs(configs);
+  closeAiConfigModal();
+  renderAiGrid();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 主操作（统一入口）
+// ═══════════════════════════════════════════════════════════════════════════
+async function startMainAction() {
+  document.getElementById('desensitize-error').innerHTML = '';
+
+  if (_inputMode === 'file') {
+    await startDesensitize();
+    return;
+  }
+
+  const text   = document.getElementById('main-text').value.trim();
+  const custom = document.getElementById('custom-instructions').value.trim();
+
   if (!text) {
-    document.getElementById('secure-llm-error').innerHTML = errorHTML('请填写待处理文本');
+    document.getElementById('desensitize-error').innerHTML = errorHTML('请输入待处理文本');
     return;
   }
+
+  if (_activePath === 'deonly') {
+    await submitDesensitizeText(text, custom);
+  } else {
+    await submitExternalAi(text, custom);
+  }
+}
+
+async function submitDesensitizeText(text, custom) {
+  const btn = document.getElementById('btn-desensitize');
+  btn.disabled = true; btn.textContent = '识别中...';
+  let resp, data;
+  try {
+    resp = await fetch('/api/desensitize_text', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ text, custom_instructions: custom }),
+    });
+    data = await resp.json();
+  } catch (e) {
+    document.getElementById('desensitize-error').innerHTML = errorHTML('网络错误，无法连接到服务');
+    btn.disabled = false; btn.innerHTML = '🚀 开始处理'; return;
+  }
+  if (!resp.ok) {
+    document.getElementById('desensitize-error').innerHTML = errorHTML(data.error || '处理失败');
+    btn.disabled = false; btn.innerHTML = '🚀 开始处理'; return;
+  }
+  document.getElementById('text-result-content').value = data.desensitized_text || '';
+  document.getElementById('text-result-meta').textContent = `识别 ${data.entity_count ?? 0} 个敏感实体`;
+  document.getElementById('text-result-tokenized-wrap').style.display = 'none';
+  document.getElementById('text-result-panel').style.display = '';
+  btn.disabled = false; btn.innerHTML = '🚀 开始处理';
+}
+
+async function submitExternalAi(text, custom) {
+  const task = document.getElementById('ai-task').value.trim();
   if (!task) {
-    document.getElementById('secure-llm-error').innerHTML = errorHTML('请填写任务说明');
+    document.getElementById('desensitize-error').innerHTML = errorHTML('请填写任务说明');
+    return;
+  }
+  if (!_selectedAiId) {
+    document.getElementById('desensitize-error').innerHTML = errorHTML('请在上方选择一个外部 AI');
+    return;
+  }
+  const cfg = loadAiConfigs().find(c => c.id === _selectedAiId);
+  if (!cfg) {
+    document.getElementById('desensitize-error').innerHTML = errorHTML('所选 AI 配置不存在，请重新选择');
     return;
   }
 
-  const btn = document.getElementById('btn-secure-llm');
-  btn.disabled = true;
-  btn.textContent = '处理中（本地识别 + 外部调用）...';
-
-  const body = {
-    text,
-    task,
-    custom_instructions: custom,
-    passthrough_if_empty: true,
-    return_tokenized: returnTok,
-  };
-  if (extUrl) body.external_api_url = extUrl;
-  if (extModel) body.external_model = extModel;
-  if (extSys) body.external_system_prompt = extSys;
+  const btn = document.getElementById('btn-desensitize');
+  btn.disabled = true; btn.textContent = '处理中...';
+  const returnTok = document.getElementById('ai-return-tokenized').checked;
 
   let resp, data;
   try {
     resp = await fetch('/api/secure_llm', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authHeaders() },
-      body: JSON.stringify(body),
+      body: JSON.stringify({
+        text, task, custom_instructions: custom,
+        passthrough_if_empty: true, return_tokenized: returnTok,
+        external_api_url: cfg.api_url, external_model: cfg.model,
+        external_api_key: cfg.api_key, external_system_prompt: cfg.system_prompt || '',
+      }),
     });
-  } catch (e) {
-    document.getElementById('secure-llm-error').innerHTML = errorHTML('网络错误，无法连接到服务');
-    btn.disabled = false;
-    btn.textContent = '🚀 开始处理';
-    return;
-  }
-
-  try {
     data = await resp.json();
   } catch (e) {
-    document.getElementById('secure-llm-error').innerHTML = errorHTML(`服务器返回了非预期的响应（HTTP ${resp.status}）`);
-    btn.disabled = false;
-    btn.textContent = '🚀 开始处理';
-    return;
+    document.getElementById('desensitize-error').innerHTML = errorHTML('网络错误，无法连接到服务');
+    btn.disabled = false; btn.innerHTML = '🚀 开始处理'; return;
   }
-
   if (!resp.ok) {
-    document.getElementById('secure-llm-error').innerHTML = errorHTML(data.error || '请求失败');
-    btn.disabled = false;
-    btn.textContent = '🚀 开始处理';
-    return;
+    document.getElementById('desensitize-error').innerHTML = errorHTML(data.error || '请求失败');
+    btn.disabled = false; btn.innerHTML = '🚀 开始处理'; return;
   }
 
-  document.getElementById('secure-llm-result').value = data.result || '';
-  document.getElementById('secure-llm-meta').textContent =
-    `识别实体 ${data.entity_count ?? 0} 个 · 映射 ${data.mapping_count ?? 0} 项 · 外部模型 ${data.used_model || '—'} · ${data.used_api_url || '—'}`;
+  document.getElementById('text-result-content').value = data.result || '';
+  document.getElementById('text-result-meta').textContent =
+    `识别 ${data.entity_count ?? 0} 个实体 · 映射 ${data.mapping_count ?? 0} 项 · 模型 ${data.used_model || '—'}`;
 
-  const tw = document.getElementById('secure-llm-tokenized-wrap');
-  const tt = document.getElementById('secure-llm-tokenized');
-  if (returnTok && (data.tokenized_text != null || data.tokenized_result != null)) {
-    tw.style.display = 'block';
-    tt.value = '【脱敏后文本】\n' + (data.tokenized_text || '') + '\n\n【模型返回（未还原）】\n' + (data.tokenized_result || '');
+  const tw = document.getElementById('text-result-tokenized-wrap');
+  if (returnTok && (data.tokenized_text || data.tokenized_result)) {
+    tw.style.display = '';
+    document.getElementById('text-result-tokenized').value =
+      '【脱敏后文本】\n' + (data.tokenized_text || '') + '\n\n【模型原始返回】\n' + (data.tokenized_result || '');
   } else {
     tw.style.display = 'none';
-    tt.value = '';
   }
+  document.getElementById('text-result-panel').style.display = '';
+  btn.disabled = false; btn.innerHTML = '🚀 开始处理';
+}
 
-  document.getElementById('secure-llm-result-wrap').style.display = 'block';
-  btn.disabled = false;
-  btn.textContent = '🚀 开始处理';
+function resetMainInput() {
+  document.getElementById('main-text').value = '';
+  mainFile = null;
+  const dz = document.getElementById('dz-main');
+  dz.classList.remove('file-selected');
+  dz.querySelector('.dz-icon').textContent = '📁';
+  dz.querySelector('.dz-label').textContent = '拖放文件到此处，或点击选择';
+  dz.querySelector('.dz-hint').textContent = '支持格式：.docx · .xlsx / .xls · .csv · .pdf（可选中文字）';
+  document.getElementById('file-main').value = '';
+  document.getElementById('custom-instructions').value = '';
+  document.getElementById('desensitize-error').innerHTML = '';
+  document.getElementById('text-result-panel').style.display = 'none';
+  updateMainActionButton();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -980,7 +1307,7 @@ function onMainFileSelect(file) {
   dz.querySelector('.dz-icon').textContent = '✅';
   dz.querySelector('.dz-label').textContent = file.name;
   dz.querySelector('.dz-hint').textContent = `大小：${fmtSize(file.size)}`;
-  document.getElementById('btn-desensitize').disabled = false;
+  updateMainActionButton();
 }
 
 function onRestoreDocSelect(file) {
@@ -1005,16 +1332,7 @@ function updateRestoreBtn() {
 // 重置上传区（不清队列）
 // ═══════════════════════════════════════════════════════════════════════════
 function resetDesensitizeUpload() {
-  mainFile = null;
-  const dz = document.getElementById('dz-main');
-  dz.classList.remove('file-selected');
-  dz.querySelector('.dz-icon').textContent = '📁';
-  dz.querySelector('.dz-label').textContent = '拖放文件到此处，或点击选择';
-  dz.querySelector('.dz-hint').textContent = '支持格式：.docx · .xlsx / .xls · .csv · .pdf（可选中文字）';
-  document.getElementById('file-main').value = '';
-  document.getElementById('custom-instructions').value = '';
-  document.getElementById('desensitize-error').innerHTML = '';
-  updateDesensitizeButton();
+  resetMainInput();
 }
 
 function resetRestoreUpload() {
@@ -1537,10 +1855,7 @@ function fmtElapsed(secs) {
 // 脱敏按钮文字
 // ═══════════════════════════════════════════════════════════════════════════
 function updateDesensitizeButton() {
-  const btn = document.getElementById('btn-desensitize');
-  const hasActive = jobQueue.some(j => j.status === 'queued' || j.status === 'processing');
-  btn.innerHTML = hasActive ? '➕ 加入脱敏队列' : '🚀 开始脱敏';
-  btn.disabled = !mainFile;
+  updateMainActionButton();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

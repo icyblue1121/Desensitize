@@ -467,6 +467,7 @@ class SecureLlmHandler(BaseHandler):
         api_url = str(body.get("external_api_url", "")).strip() or cfg.get("api_url", "http://localhost:11434")
         model = str(body.get("external_model", "")).strip() or (local_models[0] if local_models else "qwen3.5:35b")
         system_prompt = str(body.get("external_system_prompt", "")).strip()
+        api_key = str(body.get("external_api_key", "")).strip()
 
         few_shot = fb_module.build_few_shot_section(DATA_DIR)
         fp_set = fb_module.get_false_positive_set(DATA_DIR)
@@ -493,6 +494,7 @@ class SecureLlmHandler(BaseHandler):
             model=model,
             api_url=api_url,
             system_prompt=system_prompt,
+            api_key=api_key,
         )
 
         reverse_mapping = {v: k for k, v in mapping.items()}
@@ -509,6 +511,49 @@ class SecureLlmHandler(BaseHandler):
             resp["tokenized_text"] = tokenized_text
             resp["tokenized_result"] = ai_output
         self.write_json(resp)
+
+
+class DesensitizeTextHandler(BaseHandler):
+    """POST /api/desensitize_text — 对文本直接脱敏，返回脱敏后文本及实体映射。"""
+    def post(self):
+        try:
+            body = json.loads(self.request.body or b"{}")
+        except Exception:
+            self.write_error_json("无效请求体")
+            return
+
+        text = str(body.get("text", "")).strip()
+        custom_instructions = str(body.get("custom_instructions", "")).strip()
+
+        if not text:
+            self.write_error_json("缺少 text")
+            return
+
+        cfg = load_config()
+        few_shot = fb_module.build_few_shot_section(DATA_DIR)
+        fp_set = fb_module.get_false_positive_set(DATA_DIR)
+
+        try:
+            entities = detector.detect_entities(
+                text,
+                custom_instructions,
+                models=_normalize_models(cfg),
+                ollama_url=cfg.get("api_url", "http://localhost:11434"),
+                few_shot_section=few_shot,
+                false_positive_set=fp_set if fp_set else None,
+            )
+        except RuntimeError as e:
+            self.write_error_json(str(e), 502)
+            return
+
+        mapping = {e["original"]: e["replacement"] for e in entities}
+        desensitized = doc_handler.tokenize_text_with_mapping(text, mapping)
+
+        self.write_json({
+            "desensitized_text": desensitized,
+            "entity_count": len(entities),
+            "mapping": mapping,
+        })
 
 
 class DesensitizeHandler(BaseHandler):
@@ -930,6 +975,7 @@ def make_app():
         (r"/",                         MainHandler),
         (r"/api/settings",             SettingsHandler),
         (r"/api/secure_llm",           SecureLlmHandler),
+        (r"/api/desensitize_text",     DesensitizeTextHandler),
         (r"/api/desensitize",          DesensitizeHandler),
         (r"/api/restore",              RestoreHandler),
         (r"/api/restore_from_job",     RestoreFromJobHandler),
