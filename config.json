@@ -1,7 +1,5 @@
 {
   "api_url": "http://localhost:11434",
-  "model": "qwen3.5:35b",
-  "model_2": "",
-  "dual_model": false,
+  "models": ["qwen3.5:35b"],
   "cleanup_days": 7
 }

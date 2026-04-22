@@ -48,18 +48,35 @@ ALLOWED_SUFFIXES = {".docx", ".xlsx", ".xls", ".csv", ".pdf"}
 
 # ─── 配置读写 ─────────────────────────────────────────────────────────────────
 
+DEFAULT_MODELS = ["qwen3.5:35b"]
+
+
+def _normalize_models(cfg: dict) -> list:
+    """从 cfg 读取 models，兼容旧版 model/model_2/dual_model 字段。"""
+    models = cfg.get("models")
+    if isinstance(models, list):
+        cleaned = [str(m).strip() for m in models if str(m).strip()]
+        if cleaned:
+            return cleaned
+    legacy = [str(cfg.get("model", "")).strip()]
+    if cfg.get("dual_model") and str(cfg.get("model_2", "")).strip():
+        legacy.append(str(cfg["model_2"]).strip())
+    legacy = [m for m in legacy if m]
+    return legacy or list(DEFAULT_MODELS)
+
+
 def load_config() -> dict:
     if CONFIG_FILE.exists():
         try:
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
+                cfg = json.load(f)
+                cfg["models"] = _normalize_models(cfg)
+                return cfg
         except Exception:
             pass
     return {
         "api_url": "http://localhost:11434",
-        "model": "qwen3.5:35b",
-        "model_2": "",          # 第二遍验证模型（留空则不启用双模型）
-        "dual_model": False,    # True = 启用串行双模型流水线
+        "models": list(DEFAULT_MODELS),
         "cleanup_days": 7,
     }
 
@@ -154,34 +171,37 @@ def _process_desensitize(job_id: str, upload_path: Path,
             return
 
         cfg = load_config()
-        dual = cfg.get("dual_model", False)
-        model_2 = cfg.get("model_2", "").strip()
+        models = _normalize_models(cfg)
+        total_models = len(models)
 
-        if dual and model_2:
-            jobs[job_id]["progress"] = "正在调用 AI 识别敏感信息（双模型流水线：第一遍识别中）..."
-        else:
-            jobs[job_id]["progress"] = "正在调用 AI 识别敏感信息（本地模型，请耐心等待）..."
+        jobs[job_id]["progress"] = (
+            f"正在调用 AI 识别敏感信息（{total_models} 个模型依次运行）..."
+            if total_models > 1 else
+            "正在调用 AI 识别敏感信息（本地模型，请耐心等待）..."
+        )
         jobs[job_id]["progress_pct"] = 20
 
         # ── 从反馈库加载 few-shot 示例 + 误识别过滤集 ────────────────────────
         few_shot   = fb_module.build_few_shot_section(DATA_DIR)
         fp_set     = fb_module.get_false_positive_set(DATA_DIR)
 
+        def _on_pass(idx, total, model_name):
+            jobs[job_id]["progress"] = f"正在运行模型 {idx + 1}/{total}：{model_name}..."
+            jobs[job_id]["progress_pct"] = 20 + int(60 * idx / max(total, 1))
+
         entities = detector.detect_entities(
             text,
             custom_instructions,
-            model=cfg.get("model", "qwen3.5:35b"),
+            models=models,
             ollama_url=cfg.get("api_url", "http://localhost:11434"),
             job_id=job_id,
-            model_2=model_2,
-            dual_model=dual,
             few_shot_section=few_shot,
             false_positive_set=fp_set if fp_set else None,
+            progress_cb=_on_pass,
         )
 
-        # 双模型流水线：第二遍已在 detector 内完成，更新进度提示
-        if dual and model_2:
-            jobs[job_id]["progress"] = f"双模型验证完成，共识别 {len(entities)} 个实体，正在生成文档..."
+        if total_models > 1:
+            jobs[job_id]["progress"] = f"{total_models} 个模型识别完成，共 {len(entities)} 个实体，正在生成文档..."
 
         jobs[job_id]["progress_pct"] = 80
 
@@ -368,35 +388,53 @@ class MainHandler(tornado.web.RequestHandler):
 class SettingsHandler(BaseHandler):
     def get(self):
         cfg = load_config()
-        api_url   = cfg.get("api_url", "http://localhost:11434")
-        model     = cfg.get("model", "qwen3.5:35b")
-        model_2   = cfg.get("model_2", "").strip()
-        dual      = cfg.get("dual_model", False)
+        api_url = cfg.get("api_url", "http://localhost:11434")
+        models  = _normalize_models(cfg)
 
-        # 检查主模型状态
-        status = detector.check_ollama(api_url, model)
-
-        # 双模型：若启用且配置了 model_2，一并检查第二模型
-        model_2_status = None
-        if dual and model_2:
-            model_2_status = detector.check_ollama(api_url, model_2)
-
-        ready = status["ok"] and (not (dual and model_2) or model_2_status["ok"])
-
-        msg = status["message"]
-        if model_2_status:
-            m2_msg = model_2_status["message"]
-            msg = f"主模型：{msg}；验证模型：{m2_msg}"
+        statuses = [detector.check_ollama(api_url, m) for m in models]
+        ready = all(s["ok"] for s in statuses) if statuses else False
+        if len(models) == 1:
+            msg = statuses[0]["message"]
+        else:
+            msg = "；".join(f"{models[i]}：{statuses[i]['message']}" for i in range(len(models)))
 
         self.write_json({
             "ready": ready,
             "message": msg,
             "api_url": api_url,
-            "model": model,
-            "model_2": model_2,
-            "dual_model": dual,
+            "models": models,
+            "model": models[0] if models else "",
             "cleanup_days": cfg.get("cleanup_days", 7),
         })
+
+    def post(self):
+        try:
+            body = json.loads(self.request.body or b"{}")
+        except Exception:
+            self.write_error_json("无效请求体")
+            return
+        cfg = load_config()
+        if "api_url" in body:
+            cfg["api_url"] = str(body["api_url"]).strip() or cfg.get("api_url", "http://localhost:11434")
+        if "models" in body:
+            raw = body["models"]
+            if not isinstance(raw, list):
+                self.write_error_json("models 必须为数组")
+                return
+            cleaned = [str(m).strip() for m in raw if str(m).strip()]
+            if not cleaned:
+                self.write_error_json("至少需要一个模型")
+                return
+            cfg["models"] = cleaned
+        if "cleanup_days" in body:
+            try:
+                cfg["cleanup_days"] = max(1, int(body["cleanup_days"]))
+            except Exception:
+                pass
+        for legacy in ("model", "model_2", "dual_model"):
+            cfg.pop(legacy, None)
+        save_config(cfg)
+        self.write_json({"ok": True, "models": cfg["models"], "api_url": cfg.get("api_url", "")})
 
 
 class SecureLlmHandler(BaseHandler):
@@ -425,8 +463,9 @@ class SecureLlmHandler(BaseHandler):
             return
 
         cfg = load_config()
+        local_models = _normalize_models(cfg)
         api_url = str(body.get("external_api_url", "")).strip() or cfg.get("api_url", "http://localhost:11434")
-        model = str(body.get("external_model", "")).strip() or cfg.get("model", "qwen3.5:35b")
+        model = str(body.get("external_model", "")).strip() or (local_models[0] if local_models else "qwen3.5:35b")
         system_prompt = str(body.get("external_system_prompt", "")).strip()
 
         few_shot = fb_module.build_few_shot_section(DATA_DIR)
@@ -435,12 +474,10 @@ class SecureLlmHandler(BaseHandler):
         entities = detector.detect_entities(
             text,
             custom_instructions,
-            model=cfg.get("model", "qwen3.5:35b"),
+            models=local_models,
             ollama_url=cfg.get("api_url", "http://localhost:11434"),
             few_shot_section=few_shot,
             false_positive_set=fp_set if fp_set else None,
-            dual_model=cfg.get("dual_model", False),
-            model_2=cfg.get("model_2", "").strip(),
         )
 
         mapping = {e["original"]: e["replacement"] for e in entities}

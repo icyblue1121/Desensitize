@@ -631,6 +631,25 @@
   </div>
 
   <div class="card">
+    <div class="card-title"><span class="icon">⚙️</span>本地模型配置</div>
+    <div style="font-size:13px;color:var(--gray);margin-bottom:12px;line-height:1.7">
+      指定一个 AI 服务地址，然后配置本地模型列表。每个模型用<b>相同的提示词</b>独立跑一次，结果合并去重。默认只跑一个模型；添加一个模型就再跑一次。
+    </div>
+
+    <label style="display:block;font-size:13px;font-weight:600;margin-bottom:6px">AI 服务地址</label>
+    <input type="text" id="cfg-api-url" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;margin-bottom:14px" placeholder="http://localhost:11434">
+
+    <label style="display:block;font-size:13px;font-weight:600;margin-bottom:6px">本地模型列表（按顺序依次运行）</label>
+    <div id="cfg-models-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px"></div>
+    <button class="btn btn-secondary btn-sm" onclick="addCfgModelRow('')">＋ 添加模型</button>
+
+    <div style="margin-top:14px;display:flex;gap:8px;align-items:center">
+      <button class="btn btn-primary btn-sm" onclick="saveSettings()">💾 保存配置</button>
+      <span id="cfg-save-msg" style="font-size:13px"></span>
+    </div>
+  </div>
+
+  <div class="card">
     <div class="card-title"><span class="icon">📋</span>使用说明</div>
 
     <div class="guide-section">
@@ -1684,14 +1703,66 @@ async function loadSystemStatus() {
   try {
     const resp = await fetch('/api/settings');
     const data = await resp.json();
+    const modelList = (data.models && data.models.length ? data.models : [data.model]).filter(Boolean);
+    const modelLabel = modelList.length > 1
+      ? `${modelList.length} 个模型：${modelList.map(escHtml).join(' → ')}`
+      : `模型：${escHtml(modelList[0] || '—')}`;
     if (data.ready) {
       el.innerHTML = `<span class="status-ok">✅ ${escHtml(data.message)}</span>
-        <span style="font-size:12px;color:var(--gray);margin-left:10px">模型：${escHtml(data.model)} · 文件保留 ${data.cleanup_days} 天</span>`;
+        <span style="font-size:12px;color:var(--gray);margin-left:10px">${modelLabel} · 文件保留 ${data.cleanup_days} 天</span>`;
     } else {
       el.innerHTML = `<span class="status-fail">⚠️ ${escHtml(data.message)}</span>`;
     }
+    renderCfgModels(data.api_url || '', modelList.length ? modelList : ['']);
   } catch(e) {
     el.innerHTML = '<span class="status-fail">⚠️ 无法获取服务状态</span>';
+  }
+}
+
+function renderCfgModels(apiUrl, models) {
+  const apiEl = document.getElementById('cfg-api-url');
+  if (apiEl) apiEl.value = apiUrl;
+  const list = document.getElementById('cfg-models-list');
+  if (!list) return;
+  list.innerHTML = '';
+  (models.length ? models : ['']).forEach(m => addCfgModelRow(m));
+}
+
+function addCfgModelRow(value) {
+  const list = document.getElementById('cfg-models-list');
+  if (!list) return;
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;gap:8px;align-items:center';
+  row.innerHTML = `
+    <input type="text" class="cfg-model-input" value="${escHtml(value || '')}"
+           placeholder="模型名，例如 qwen3.5:35b"
+           style="flex:1;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+    <button class="qi-ctrl-btn cancel" title="删除" style="width:32px;height:32px">✕</button>
+  `;
+  row.querySelector('button').onclick = () => row.remove();
+  list.appendChild(row);
+}
+
+async function saveSettings() {
+  const apiUrl = document.getElementById('cfg-api-url').value.trim();
+  const models = Array.from(document.querySelectorAll('.cfg-model-input'))
+    .map(i => i.value.trim()).filter(Boolean);
+  const msg = document.getElementById('cfg-save-msg');
+  msg.textContent = '';
+  if (!apiUrl) { msg.innerHTML = '<span class="status-fail">请填写 AI 服务地址</span>'; return; }
+  if (!models.length) { msg.innerHTML = '<span class="status-fail">至少需要一个模型</span>'; return; }
+  try {
+    const resp = await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ api_url: apiUrl, models })
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || '保存失败');
+    msg.innerHTML = `<span class="status-ok">✅ 已保存（${data.models.length} 个模型）</span>`;
+    loadSystemStatus();
+  } catch (e) {
+    msg.innerHTML = `<span class="status-fail">⚠️ ${escHtml(e.message)}</span>`;
   }
 }
 

@@ -180,166 +180,38 @@ def _auto_expand_abbreviations(entities: list, text: str) -> list:
     return entities + new_entities
 
 
-VERIFICATION_PROMPT = """You are a quality reviewer for Chinese contract document de-identification.
-A first AI pass already identified sensitive items listed below. Your only job is to find items that were MISSED.
-
-Focus especially on:
-- ID card numbers (18 digits, e.g. 420802199307020624)
-- Phone/mobile numbers (11 digits starting with 1)
-- Bank account numbers (16-19 consecutive digit strings)
-- Unified social credit codes (18 alphanumeric chars, e.g. 91330105MA2HYFH27R)
-- Full company/entity names including individual business names (个体工商户)
-- Detailed postal addresses (province + city + district + street + number)
-- Bank branch names (开户行, e.g. 工行荆门文峰支行)
-
-Already-identified items — DO NOT repeat these:
-{found_entities_json}
-
-Document text to review:
-{document_text}
-
-Return ONLY a JSON object. List genuinely missed items only:
-{{"entities": [{{"original": "exact text as it appears in document", "category": "category in Chinese", "replacement": "plausible fictional replacement"}}]}}
-If nothing was missed, return: {{"entities": []}}
-No explanation, no markdown, JSON only."""
-
-
-def _detect_second_pass(text: str, found_entities: list,
-                        model_2: str, ollama_url: str,
-                        job_id: str) -> list:
-    """
-    第二遍验证：将第一遍结果 + 原文发给 model_2，补漏未识别的敏感项。
-    返回新增实体列表（不含 pass1 中已有的项）。
-    """
-    found_json = json.dumps(
-        [{"original": e["original"], "category": e["category"]} for e in found_entities],
-        ensure_ascii=False
-    )
-    prompt = VERIFICATION_PROMPT.format(
-        found_entities_json=found_json,
-        document_text=text[:8000],   # 兜底截断，防止超长
-    )
+def _run_detection_pass(prompt: str, model: str, ollama_url: str,
+                        job_id: str, text: str, pass_idx: int) -> list:
+    """对单个模型执行一次识别，返回解析后的实体列表。"""
     endpoint = ollama_url.rstrip("/") + "/v1/chat/completions"
     task_seed = random.randint(1, 2**31 - 1)
-    payload = {
-        "model": model_2,
-        "messages": [
-            {"role": "system", "content": "Output only valid JSON. No explanation, no markdown."},
-            {"role": "user",   "content": prompt},
-        ],
-        "stream": False,
-        "temperature": 0.1,
-        "max_tokens": 4096,
-        "seed": task_seed,
-        "user": f"verify-{job_id}" if job_id else f"verify-{task_seed}",
-    }
-    try:
-        response = requests.post(
-            endpoint,
-            headers={"Content-Type": "application/json"},
-            json=payload,
-            timeout=300,
-        )
-    except Exception as e:
-        raise RuntimeError(f"第二遍 AI 验证服务调用失败（{model_2}）：{e}")
-
-    if response.status_code != 200:
-        raise RuntimeError(
-            f"第二遍 AI 服务返回错误 {response.status_code}：{response.text[:300]}"
-        )
-
-    raw = response.json()["choices"][0]["message"]["content"]
-    raw = _strip_think_tags(raw)
-    if raw.startswith("```"):
-        raw = re.sub(r'^```[a-z]*\s*', '', raw)
-        raw = re.sub(r'\s*```$', '', raw).strip()
-    m = re.search(r'\{[\s\S]*\}', raw)
-    if m:
-        raw = m.group(0)
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError:
-        return []   # 解析失败时安全降级，不抛异常
-
-    already = {e["original"] for e in found_entities}
-    new_items = []
-    for entity in data.get("entities", []):
-        original    = entity.get("original", "").strip()
-        replacement = entity.get("replacement", "").strip()
-        category    = entity.get("category", "未知").strip()
-        if original and replacement and original in text and original not in already:
-            new_items.append({"original": original, "category": category,
-                               "replacement": replacement})
-            already.add(original)
-    return new_items
-
-
-def detect_entities(text: str, custom_instructions: str, api_key: str = "",
-                    model: str = "qwen3.5:35b",
-                    ollama_url: str = "http://localhost:11434",
-                    job_id: str = "",
-                    model_2: str = "",
-                    dual_model: bool = False,
-                    few_shot_section: str = "",
-                    false_positive_set: "set | None" = None) -> list:
-    """
-    调用本地 AI API（OpenAI 兼容接口）识别文档中的敏感实体并生成替换映射。
-    兼容 Ollama、LM Studio 及其他 OpenAI 兼容服务。
-
-    few_shot_section  : 由 feedback.build_few_shot_section() 生成的历史纠错示例，
-                        注入 custom_section 实现 Prompt 层面的持续学习。
-    false_positive_set: 由 feedback.get_false_positive_set() 生成的误识别原文集合，
-                        在最终结果中过滤掉这些项。
-
-    每次调用使用唯一 seed + user 字段，确保模型服务清除前一任务的 KV 缓存，
-    避免跨任务的前缀缓存复用，实现任务间完全隔离。
-    返回: list of {"original": str, "category": str, "replacement": str}
-    """
-    # ── 构造 custom_section（自定义指令 + 历史 few-shot 示例）──────────────────
-    # 自定义指令仅对本次任务生效：在默认规则全部呈现之后、文档之前额外追加，
-    # 明确标注优先于上述所有默认规则，但不修改默认规则本身。
-    parts = []
-    if custom_instructions and custom_instructions.strip():
-        parts.append(
-            f"【本次任务额外指令（优先于上述所有默认规则）】\n{custom_instructions.strip()}\n"
-        )
-    if few_shot_section and few_shot_section.strip():
-        parts.append(f"{few_shot_section.strip()}\n")
-    custom_section = "\n".join(parts) if parts else ""
-
-    prompt = DETECTION_PROMPT.format(document_text=text, custom_section=custom_section)
-    endpoint = ollama_url.rstrip("/") + "/v1/chat/completions"
-
-    # 每次调用生成唯一随机种子，配合 user 字段通知模型服务这是全新独立会话，
-    # 防止 LM Studio / Ollama 的前缀 KV 缓存在任务间共享，确保上下文完全隔离。
-    task_seed = random.randint(1, 2**31 - 1)
-    task_user = f"job-{job_id}" if job_id else f"job-{task_seed}"
+    task_user = f"job-{job_id}-p{pass_idx}" if job_id else f"job-{task_seed}"
 
     payload = {
         "model": model,
         "messages": [
             {"role": "system", "content": "你是严格按JSON格式输出结果的助手，不输出任何额外文字。/no_think"},
-            {"role": "user", "content": prompt}
+            {"role": "user", "content": prompt},
         ],
         "stream": False,
         "temperature": 0.1,
         "max_tokens": 16384,
-        "seed": task_seed,       # 唯一种子：破坏前缀缓存复用，每个任务独立推理
-        "user": task_user,       # 会话标识：标准 OpenAI 字段，提示服务器这是新会话
+        "seed": task_seed,
+        "user": task_user,
     }
 
     try:
         response = requests.post(endpoint, headers={"Content-Type": "application/json"},
                                  json=payload, timeout=600)
     except requests.exceptions.Timeout:
-        raise RuntimeError("AI 服务响应超时（超过10分钟），请检查模型是否正常运行")
+        raise RuntimeError(f"AI 服务响应超时（模型 {model}，超过10分钟）")
     except requests.exceptions.ConnectionError:
         raise RuntimeError(f"无法连接到 AI 服务（{ollama_url}），请确认服务已启动且模型已加载")
 
     if response.status_code == 404:
         raise RuntimeError(f"模型 {model} 未找到，请确认模型已在 AI 服务中加载")
     elif response.status_code != 200:
-        raise RuntimeError(f"AI 服务返回错误 {response.status_code}：{response.text[:300]}")
+        raise RuntimeError(f"AI 服务返回错误 {response.status_code}（模型 {model}）：{response.text[:300]}")
 
     raw = response.json()["choices"][0]["message"]["content"]
     response_text = _strip_think_tags(raw)
@@ -355,28 +227,66 @@ def detect_entities(text: str, custom_instructions: str, api_key: str = "",
     try:
         data = json.loads(response_text)
     except json.JSONDecodeError as e:
-        raise RuntimeError(f"识别结果格式解析失败（{e}），请重试或检查模型是否支持 JSON 输出")
+        raise RuntimeError(f"识别结果格式解析失败（模型 {model}：{e}），请重试或检查模型是否支持 JSON 输出")
 
-    valid_entities, seen = [], set()
+    results = []
     for entity in data.get("entities", []):
         original = entity.get("original", "").strip()
         replacement = entity.get("replacement", "").strip()
         category = entity.get("category", "未知").strip()
-        if original and replacement and original in text and original not in seen:
-            valid_entities.append({"original": original, "category": category, "replacement": replacement})
-            seen.add(original)
+        if original and replacement and original in text:
+            results.append({"original": original, "category": category, "replacement": replacement})
+    return results
+
+
+def detect_entities(text: str, custom_instructions: str, api_key: str = "",
+                    models: "list[str] | None" = None,
+                    ollama_url: str = "http://localhost:11434",
+                    job_id: str = "",
+                    few_shot_section: str = "",
+                    false_positive_set: "set | None" = None,
+                    progress_cb=None) -> list:
+    """
+    调用本地 AI API（OpenAI 兼容接口）识别文档中的敏感实体并生成替换映射。
+    兼容 Ollama、LM Studio 及其他 OpenAI 兼容服务。
+
+    models            : 本地模型列表。每个模型用同一提示词独立跑一次，结果按 original 去重合并。
+                        默认 ["qwen3.5:35b"]，即只跑一次。
+    progress_cb       : 可选回调 fn(idx, total, model_name)，在每个模型开始前调用。
+    """
+    model_list = [m.strip() for m in (models or ["qwen3.5:35b"]) if m and m.strip()]
+    if not model_list:
+        model_list = ["qwen3.5:35b"]
+
+    # ── 构造 custom_section（自定义指令 + 历史 few-shot 示例）──────────────────
+    parts = []
+    if custom_instructions and custom_instructions.strip():
+        parts.append(
+            f"【本次任务额外指令（优先于上述所有默认规则）】\n{custom_instructions.strip()}\n"
+        )
+    if few_shot_section and few_shot_section.strip():
+        parts.append(f"{few_shot_section.strip()}\n")
+    custom_section = "\n".join(parts) if parts else ""
+
+    prompt = DETECTION_PROMPT.format(document_text=text, custom_section=custom_section)
+
+    # ── 按模型顺序执行 N 次识别，同一 prompt，结果合并去重 ────────────────────
+    valid_entities: list = []
+    seen: set = set()
+    for idx, model in enumerate(model_list):
+        if progress_cb:
+            try:
+                progress_cb(idx, len(model_list), model)
+            except Exception:
+                pass
+        pass_results = _run_detection_pass(prompt, model, ollama_url, job_id, text, idx)
+        for entity in pass_results:
+            if entity["original"] not in seen:
+                valid_entities.append(entity)
+                seen.add(entity["original"])
 
     valid_entities = _auto_expand_abbreviations(valid_entities, text)
     valid_entities = _auto_expand_bracket_variants(valid_entities, text)
-
-    # ── 双模型第二遍验证补漏 ──────────────────────────────────────────────────
-    if dual_model and model_2 and model_2.strip():
-        extra = _detect_second_pass(text, valid_entities, model_2, ollama_url, job_id)
-        if extra:
-            valid_entities = valid_entities + extra
-            # 对补漏部分同样做简称/括号变体扩展
-            valid_entities = _auto_expand_abbreviations(valid_entities, text)
-            valid_entities = _auto_expand_bracket_variants(valid_entities, text)
 
     # ── 过滤历史误识别项 ───────────────────────────────────────────────────────
     if false_positive_set:
