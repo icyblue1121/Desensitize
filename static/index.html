@@ -923,6 +923,11 @@
 // ═══════════════════════════════════════════════════════════════════════════
 let currentUser = '';
 let mainFile = null, restoreDocFile = null, restoreMapFile = null;
+// 注：_inputMode / _activePath / jobQueue 必须在 init() 之前声明，否则 updateMainActionButton 在 TDZ 中访问会抛错并中止整段脚本
+let _inputMode = 'text';
+let _activePath = 'deonly';
+let jobQueue = [];
+let pollTimer = null;
 
 function doLogin() {
   const input = document.getElementById('login-username');
@@ -977,9 +982,6 @@ function switchTab(panelId, btn) {
 // ═══════════════════════════════════════════════════════════════════════════
 // 输入模式 & 路径选择
 // ═══════════════════════════════════════════════════════════════════════════
-let _inputMode = 'text';    // 'text' | 'file'
-let _activePath = 'deonly'; // 'deonly' | 'external'
-
 function switchInputMode(mode, btn) {
   _inputMode = mode;
   document.querySelectorAll('.imode-btn').forEach(b => b.classList.remove('active'));
@@ -1357,8 +1359,6 @@ function resetRestoreUpload() {
 //   progress, queue_position, started_at, desensitized_filename,
 //   mapping_filename, entity_count, categories, warning,
 //   restored_filename, replacement_count, error }
-let jobQueue = [];
-let pollTimer = null;
 
 // ── 提交脱敏 ──────────────────────────────────────────────────────────────
 async function startDesensitize() {
